@@ -4,10 +4,10 @@ Constantes pour l'organisateur d'Estivales de Volley
 
 # Configuration des équipes
 TEAM_SIZE = 3
-MAX_CONSECUTIVE_DAYS = 3
+MAX_CONSECUTIVE_DAYS = 4
 
 # Limites de solutions
-MAX_SOLUTIONS_TO_FIND = 50
+MAX_SOLUTIONS_TO_FIND = 150
 MAX_SOLUTIONS_TO_DISPLAY = 10
 
 # Timeout du solver (en secondes)
@@ -74,18 +74,18 @@ TOURNAMENTS = [
 # Données par défaut
 DEFAULT_PARTICIPANTS = [
     ['Julien', 'M', 'Emilie', 1, 1, 'O3', False],
-    ['Hugo', 'M', None, 1, 1, 'E3', False],
-    ['Sébastien A', 'M', 'Kathleen', 0, 1, 'O3', False],
-    ['Emilie', 'F', 'Julien', 2, 0, 'O3', False],
-    ['Kathleen', 'F', 'Sébastien A', 2, 0, 'O3', False],
-    ['Delphine', 'F', None, 2, 0, 'E2', False],  # Plus de couple, pas strict
-    ['Sylvain', 'M', 'Sophie L', 2, 1, 'E3', False],
-    ['Robin', 'M', None, 2, 1, 'E3', False],  # Plus de couple avec Delphine
-    ['Rémy', 'M', 'Lise', 2, 1, 'O3', False],
-    ['Sophie S', 'F', 'Sébastien S', 2, 1, 'O3', False],
-    ['Lise', 'F', 'Rémy', 1, 2, 'O3', False],
-    ['Sébastien S', 'M', 'Sophie S', 1, 2, 'O3', False],
+    ['Emilie', 'F', 'Julien', 2, 0, 'O3', False], 
     ['Sophie L', 'F', 'Sylvain', 1, 2, 'E3', False],
+    ['Hugo', 'M', None, 1, 1, 'E3', False],
+    ['Sylvain', 'M', 'Sophie L', 2, 1, 'E3', False],
+    ['Sébastien A', 'M', 'Kathleen', 0, 1, 'O3', False],
+    ['Kathleen', 'F', 'Sébastien A', 2, 0, 'O3', False],  
+    ['Sébastien S', 'M', 'Sophie S', 1, 2, 'O3', False],
+    ['Sophie S', 'F', 'Sébastien S', 2, 1, 'O3', False],
+    ['Rémy', 'M', 'Lise', 2, 1, 'O3', False],
+    ['Lise', 'F', 'Rémy', 1, 2, 'O3', False],
+    ['Robin', 'M', None, 2, 1, 'E3', False],
+    ['Delphine', 'F', None, 2, 0, 'E2', False],  
 ]
 
 # Colonnes du DataFrame participants
@@ -97,6 +97,7 @@ PARTICIPANT_COLUMNS = [
     'Voeux_Open',
     'Dispo_Jusqu_a',
     'Respect_Voeux'
+    # 'Respect_Etapes_Strict'  # NOUVEAU
 ]
 
 # Genres valides

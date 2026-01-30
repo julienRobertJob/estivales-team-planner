@@ -334,7 +334,7 @@ with col_param3:
         "🔢 Solutions à chercher",
         min_value=10,
         max_value=100,
-        value=50,
+        value=100,
         step=10,
         help="""Nombre maximum de solutions différentes à générer.
         
@@ -557,130 +557,112 @@ if st.session_state.solutions:
         help="Score moyen de toutes les solutions (plus élevé = mieux)"
     )
     
-    # Aide au choix - FUSIONNÉE
-    st.markdown("---")
-    st.subheader("🔍 Aide au Choix")
+    # Aide au choix - Désactivé car 
+    # st.markdown("---")
+    # st.subheader("🔍 Aide au Choix")
     
-    # Vérifier s'il y a des candidats proposés par le multipass
-    has_candidates = 'candidates' in st.session_state and st.session_state.candidates
+    # # Vérifier s'il y a des candidats proposés par le multipass
+    # has_candidates = 'candidates' in st.session_state and st.session_state.candidates
     
-    if has_candidates:
-        # CAS 1: Le multipass a identifié des candidats à léser
-        st.info("💡 L'algorithme a identifié des participants qu'on peut léser pour débloquer")
+    # if has_candidates:
+    #     # CAS 1: Le multipass a identifié des candidats à léser
+    #     st.info("💡 L'algorithme a identifié des participants qu'on peut léser pour débloquer")
         
-        candidates_data = []
-        for candidate in st.session_state.candidates:
-            candidates_data.append({
-                'Nom': candidate.participant_name,
-                'Vœux Étapes': candidate.current_wishes_etape,
-                'Vœux Opens': candidate.current_wishes_open,
-                'Jours si lésé': candidate.impact_days_if_relaxed,
-                'Action': candidate.reason
-            })
+    #     candidates_data = []
+    #     for candidate in st.session_state.candidates:
+    #         candidates_data.append({
+    #             'Nom': candidate.participant_name,
+    #             'Vœux Étapes': candidate.current_wishes_etape,
+    #             'Vœux Opens': candidate.current_wishes_open,
+    #             'Jours si lésé': candidate.impact_days_if_relaxed,
+    #             'Action': candidate.reason
+    #         })
         
-        # Trier par jours si lésé DESCENDANT (ceux qui joueraient le plus en premier)
-        df_candidates = pd.DataFrame(candidates_data).sort_values('Jours si lésé', ascending=False)
+    #     # Trier par jours si lésé DESCENDANT (ceux qui joueraient le plus en premier)
+    #     df_candidates = pd.DataFrame(candidates_data).sort_values('Jours si lésé', ascending=False)
         
-        st.dataframe(df_candidates, use_container_width=True, hide_index=True)
+    #     st.dataframe(df_candidates, use_container_width=True, hide_index=True)
         
-        # Sélection
-        selected_to_relax = st.multiselect(
-            "Sélectionnez qui accepter de léser:",
-            options=[c['Nom'] for c in candidates_data],
-            help="Cochez les participants dont vous acceptez de ne pas respecter entièrement les vœux"
-        )
+    #     # Sélection
+    #     selected_to_relax = st.multiselect(
+    #         "Sélectionnez qui accepter de léser:",
+    #         options=[c['Nom'] for c in candidates_data],
+    #         help="Cochez les participants dont vous acceptez de ne pas respecter entièrement les vœux"
+    #     )
         
-        if selected_to_relax and st.button("🔄 Recalculer avec ces relaxations", type="primary"):
-            with st.spinner("Calcul avec relaxations..."):
-                multipass = MultiPassSolver(SolverConfig(
-                    include_o3=st.session_state.include_o3,
-                    allow_incomplete=st.session_state.allow_incomplete,
-                    max_solutions=st.session_state.get('max_solutions', 50),
-                    timeout_seconds=60.0
-                ))
+    #     if selected_to_relax and st.button("🔄 Recalculer avec ces relaxations", type="primary"):
+    #         with st.spinner("Calcul avec relaxations..."):
+    #             multipass = MultiPassSolver(SolverConfig(
+    #                 include_o3=st.session_state.include_o3,
+    #                 allow_incomplete=st.session_state.allow_incomplete,
+    #                 max_solutions=st.session_state.get('max_solutions', 50),
+    #                 timeout_seconds=60.0
+    #             ))
                 
-                result = multipass.solve_with_relaxation(
-                    st.session_state.participants_for_relax,
-                    st.session_state.active_tournaments,
-                    relax_names=selected_to_relax
-                )
+    #             result = multipass.solve_with_relaxation(
+    #                 st.session_state.participants_for_relax,
+    #                 st.session_state.active_tournaments,
+    #                 relax_names=selected_to_relax
+    #             )
                 
-                if result.status == 'success':
-                    st.success(result.message)
-                    st.session_state.solutions = result.solutions
-                    st.session_state.solver_info = {'pass': result.pass_number, 'relaxed': selected_to_relax}
-                    # Nettoyer les candidats pour pas qu'ils réapparaissent
-                    if 'candidates' in st.session_state:
-                        del st.session_state.candidates
-                    if 'participants_for_relax' in st.session_state:
-                        del st.session_state.participants_for_relax
-                    if 'active_tournaments' in st.session_state:
-                        del st.session_state.active_tournaments
-                    st.rerun()
-                else:
-                    st.error(result.message)
+    #             if result.status == 'success':
+    #                 st.success(result.message)
+    #                 st.session_state.solutions = result.solutions
+    #                 st.session_state.solver_info = {'pass': result.pass_number, 'relaxed': selected_to_relax}
+    #                 # Nettoyer les candidats pour pas qu'ils réapparaissent
+    #                 if 'candidates' in st.session_state:
+    #                     del st.session_state.candidates
+    #                 if 'participants_for_relax' in st.session_state:
+    #                     del st.session_state.participants_for_relax
+    #                 if 'active_tournaments' in st.session_state:
+    #                     del st.session_state.active_tournaments
+    #                 st.rerun()
+    #             else:
+    #                 st.error(result.message)
     
-    # CAS 2: Filtrer les solutions existantes par participants lésés
-    all_violated = sorted(list(set().union(*(s.violated_wishes for s in solutions))))
-    
-    if all_violated and not has_candidates:
-        st.info("📊 Certains participants ont leurs vœux non respectés dans les solutions")
+    # # CAS 2: Afficher info sur les solutions existantes (pas de filtrage automatique)
+    # all_violated = sorted(list(set().union(*(s.violated_wishes for s in solutions))))
+    # if all_violated and not has_candidates:
+    #     st.info("📊 Analyse des participants lésés dans les solutions")
         
-        col_filter1, col_filter2 = st.columns([2, 3])
-        
-        with col_filter1:
-            accepted_violated = st.multiselect(
-                "Filtrer par participants lésés acceptés:",
-                options=all_violated,
-                help="Sélectionnez pour ne voir que les solutions où SEULEMENT ces participants sont lésés"
-            )
-        
-        with col_filter2:
-            # Tableau récapitulatif avec données correctes
-            violated_stats = []
-            for name in all_violated:
-                # Trouver les stats dans les solutions où cette personne est lésée
-                days_when_violated = [
-                    s.get_participant_stats(name)['jours_joues']
-                    for s in solutions
-                    if name in s.violated_wishes
-                ]
-                
-                if days_when_violated:
-                    violated_stats.append({
-                        'Nom': name,
-                        'Jours si lésé': max(days_when_violated)  # Max pour montrer le meilleur cas
-                    })
+    #     # Tableau récapitulatif avec vraies données
+    #     violated_stats = []
+    #     for name in all_violated:
+    #         # Compter dans combien de solutions cette personne est lésée
+    #         solutions_with_violation = [s for s in solutions if name in s.violated_wishes]
             
-            if violated_stats:
-                df_violated = pd.DataFrame(violated_stats).sort_values(
-                    'Jours si lésé',
-                    ascending=False  # DESCENDANT: les plus hauts en premier
-                )
+    #         if solutions_with_violation:
+    #             # Écart moyen quand lésé
+    #             avg_ecart = sum(
+    #                 abs(s.get_participant_stats(name)['ecart'])
+    #                 for s in solutions_with_violation
+    #             ) / len(solutions_with_violation)
                 
-                st.dataframe(
-                    df_violated,
-                    use_container_width=True,
-                    hide_index=True,
-                    height=min(300, 35 * (len(df_violated) + 1))
-                )
+    #             violated_stats.append({
+    #                 'Nom': name,
+    #                 'Lésé dans': f"{len(solutions_with_violation)}/{len(solutions)} solutions",
+    #                 'Écart moyen': f"{avg_ecart:.1f}j"
+    #             })
         
-        # Filtrer les solutions
-        if accepted_violated:
-            filtered = [
-                s for s in solutions
-                if s.violated_wishes.issubset(set(accepted_violated))
-            ]
-        else:
-            filtered = solutions
-    else:
-        if not has_candidates:
-            st.success("🎉 Toutes les solutions respectent tous les vœux !")
-        filtered = solutions
+    #     if violated_stats:
+    #         df_violated = pd.DataFrame(violated_stats)
+    #         st.dataframe(
+    #             df_violated,
+    #             use_container_width=True,
+    #             hide_index=True,
+    #             height=min(300, 35 * (len(df_violated) + 1))
+    #         )
+        
+    #     # PAS DE FILTRAGE - Afficher toutes les solutions
+    #     filtered = solutions
+    # else:
+    #     if not has_candidates:
+    #         st.success("🎉 Toutes les solutions respectent tous les vœux !")
+    #     filtered = solutions
     
     # Trier par max_consecutive_days puis qualité
     filtered = sorted(
-        filtered,
+        solutions, # si on décommente au dessus remettre : filtered,
         key=lambda s: (s.max_consecutive_days, -s.get_quality_score())
     )
     
@@ -733,8 +715,15 @@ if st.session_state.solutions:
                 
                 with col_head1:
                     if solution.violated_wishes:
+                        # Calculer les détails avec jours lésés
+                        details = []
+                        for nom in sorted(solution.violated_wishes):
+                            stats = solution.get_participant_stats(nom)
+                            ecart = stats['ecart']
+                            details.append(f"{nom} ({ecart:+d}j)")
+                        
                         st.warning(
-                            f"🚨 **Lésés** : {', '.join(sorted(solution.violated_wishes))}"
+                            f"🚨 **Lésés** : {', '.join(details)}"
                         )
                     else:
                         st.success("✅ **Tous les vœux respectés**")
@@ -754,31 +743,17 @@ if st.session_state.solutions:
                     )
                 
                 # Graphiques de détail de cette variante
-                st.markdown("### 📊 Visualisations de cette Variante")
+                st.markdown("### 📈 Analyses de cette Variante")
                 
-                tab_detail1, tab_detail2 = st.tabs(["📅 Calendrier", "📈 Analyses"])
+                col_ana1, col_ana2 = st.columns(2)
                 
-                with tab_detail1:
-                    col_cal1, col_cal2 = st.columns(2)
-                    
-                    with col_cal1:
-                        fig_timeline = create_timeline_chart(solution, active_tournaments)
-                        st.plotly_chart(fig_timeline, use_container_width=True, key=f"timeline_{i}")
-                    
-                    with col_cal2:
-                        fig_heatmap = create_heatmap_chart(solution)
-                        st.plotly_chart(fig_heatmap, use_container_width=True, key=f"heatmap_{i}")
+                with col_ana1:
+                    fig_workload = create_workload_distribution_chart(solution)
+                    st.plotly_chart(fig_workload, use_container_width=True, key=f"workload_{i}")
                 
-                with tab_detail2:
-                    col_ana1, col_ana2 = st.columns(2)
-                    
-                    with col_ana1:
-                        fig_workload = create_workload_distribution_chart(solution)
-                        st.plotly_chart(fig_workload, use_container_width=True, key=f"workload_{i}")
-                    
-                    with col_ana2:
-                        fig_consecutive = create_consecutive_days_chart(solution)
-                        st.plotly_chart(fig_consecutive, use_container_width=True, key=f"consecutive_{i}")
+                with col_ana2:
+                    fig_consecutive = create_consecutive_days_chart(solution)
+                    st.plotly_chart(fig_consecutive, use_container_width=True, key=f"consecutive_{i}")
                 
                 # Planning par lieu
                 st.markdown("### 📍 Planning par Lieu")
@@ -872,15 +847,32 @@ if st.session_state.solutions:
                     ascending=False
                 )
                 
+                # Fonction de coloration des écarts
+                def color_ecart(val):
+                    """Colore selon l'écart: rouge si ±2+, orange si ±1"""
+                    if val == 0:
+                        return 'background-color: #28a745; color: white'  # Vert
+                    elif abs(val) == 1:
+                        return 'background-color: #FFA500; color: white'  # Orange
+                    elif abs(val) >= 2:
+                        return 'background-color: #DC3545; color: white'  # Rouge
+                    return ''
+                
+                # Appliquer le style
+                styled_df = df_recap.style.applymap(
+                    color_ecart,
+                    subset=['Écart']
+                )
+                
                 st.dataframe(
-                    df_recap,
+                    styled_df,
                     use_container_width=True,
                     hide_index=True,
                     height=35 * (len(df_recap) + 1),
                     column_config={
                         'Écart': st.column_config.NumberColumn(
                             'Écart',
-                            help="Différence entre joué et souhaité (+ = plus que voulu, - = moins)"
+                            help="Différence entre joué et souhaité (+ = plus, - = moins). Vert=0, Orange=±1, Rouge=±2+"
                         )
                     }
                 )

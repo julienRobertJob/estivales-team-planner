@@ -16,6 +16,7 @@ class Participant:
     voeux_open: int
     dispo_jusqu_a: str
     respect_voeux: bool
+    respect_etapes_strict: bool = False  # NOUVEAU: Respect strict des étapes uniquement
     
     def __post_init__(self):
         """Validation après initialisation"""
@@ -58,7 +59,8 @@ class Participant:
             'Voeux_Etape': self.voeux_etape,
             'Voeux_Open': self.voeux_open,
             'Dispo_Jusqu_a': self.dispo_jusqu_a,
-            'Respect_Voeux': self.respect_voeux
+            'Respect_Voeux': self.respect_voeux,
+            'Respect_Etapes_Strict': self.respect_etapes_strict
         }
     
     @classmethod
@@ -71,7 +73,8 @@ class Participant:
             voeux_etape=int(data['Voeux_Etape']),
             voeux_open=int(data['Voeux_Open']),
             dispo_jusqu_a=data['Dispo_Jusqu_a'],
-            respect_voeux=bool(data['Respect_Voeux'])
+            respect_voeux=bool(data['Respect_Voeux']),
+            respect_etapes_strict=bool(data.get('Respect_Etapes_Strict', False))
         )
 
 
@@ -206,20 +209,41 @@ class Solution:
         }
     
     def get_quality_score(self) -> float:
-        """Calcule un score de qualité de la solution (0-100)"""
+        """
+        Calcule un score de qualité de la solution (0-100)
+        
+        FORMULE AMÉLIORÉE:
+        1. Vœux respectés (60 points base)
+        2. Gravité des écarts (-10 points par jour total lésé)
+        3. Fatigue (-5 points par personne fatiguée)
+        4. Jours consécutifs excessifs (-3 points par jour au-delà de 3)
+        """
         if not self.participants:
             return 0.0
         
-        # Pourcentage de vœux respectés
-        wishes_score = (1 - len(self.violated_wishes) / len(self.participants)) * 100
+        # 1. Base: vœux respectés (60 points)
+        nb_respected = len(self.participants) - len(self.violated_wishes)
+        wishes_score = (nb_respected / len(self.participants)) * 60
         
-        # Pénalité pour fatigue
-        fatigue_penalty = len(self.fatigue_participants) * 10
+        # 2. Pénalité pour GRAVITÉ des écarts (pas juste nombre de lésés)
+        total_jours_leses = 0
+        for participant in self.participants:
+            stats = self.get_participant_stats(participant.nom)
+            ecart = stats['ecart']
+            if ecart < 0:  # Seulement écarts négatifs (lésés)
+                total_jours_leses += abs(ecart)
         
-        # Pénalité pour jours consécutifs max
-        consecutive_penalty = max(0, self.max_consecutive_days - 3) * 5
+        ecart_penalty = total_jours_leses * 10  # -10 points par jour manquant
         
-        score = wishes_score - fatigue_penalty - consecutive_penalty
+        # 3. Pénalité pour fatigue
+        fatigue_penalty = len(self.fatigue_participants) * 5
+        
+        # 4. Pénalité pour jours consécutifs excessifs
+        consecutive_penalty = max(0, self.max_consecutive_days - 3) * 3
+        
+        # Score final (base 60 + bonus 40 - pénalités)
+        score = 60 + wishes_score - ecart_penalty - fatigue_penalty - consecutive_penalty
+        
         return max(0.0, min(100.0, score))
 
 
