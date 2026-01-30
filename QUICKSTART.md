@@ -21,8 +21,8 @@ cd estivales_volley
 ./run.sh
 
 # Option B : Installation manuelle
-pip install -r requirements.txt
-streamlit run app.py
+py -m pip install -r requirements.txt
+py -m streamlit run app.py
 ```
 
 ### 3. Utilisation
@@ -166,18 +166,18 @@ L'application s'ouvre automatiquement dans votre navigateur à `http://localhost
 
 1. Vérifier les dépendances :
 ```bash
-pip install -r requirements.txt --upgrade
+py -m pip install -r requirements.txt --upgrade
 ```
 
 2. Vérifier la version d'OR-Tools :
 ```bash
-pip show ortools
+py -m pip show ortools
 # Doit être >= 9.7.0
 ```
 
 3. Lancer un test spécifique pour identifier :
 ```bash
-pytest tests/test_solver.py::TestSolverObjective::test_objective_minimizes_deviation -v
+py -m pytest tests/test_solver.py::TestSolverObjective::test_objective_minimizes_deviation -v
 ```
 
 4. Si un test critique échoue :
@@ -278,13 +278,13 @@ Ne vous limitez pas à la première :
 ### Lancer les Tests
 ```bash
 # Tous les tests
-pytest tests/ -v
+py -m pytest tests/ -v
 
 # Tests spécifiques
-pytest tests/test_solver.py::TestSolverObjective -v
+py -m pytest tests/test_solver.py::TestSolverObjective -v
 
 # Avec couverture
-pytest tests/ --cov=src --cov-report=html
+py -m pytest tests/ --cov=src --cov-report=html
 ```
 
 ### Modifier le Code

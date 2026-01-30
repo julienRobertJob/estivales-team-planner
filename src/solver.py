@@ -272,15 +272,14 @@ class TournamentSolver:
                         f"remainder_{tournament.id}_{genre}"
                     )
                     
-                    # Toujours autoriser les restes (sinon impossible avec peu de joueurs)
+                    # Contrainte d'équipes
                     model.Add(sum(players) == num_teams * TEAM_SIZE + remainder)
                     
-                    # Pénaliser seulement si config demande des équipes complètes
                     if not self.config.allow_incomplete:
-                        # Pénalité forte pour les restes
-                        penalty_vars.append(remainder * 100)
+                        # FORCER remainder = 0 (équipes complètes obligatoires)
+                        model.Add(remainder == 0)
                     else:
-                        # Pénalité légère
+                        # Pénaliser légèrement les restes
                         penalty_vars.append(remainder)
             
             else:  # Open (mixte)
@@ -302,12 +301,15 @@ class TournamentSolver:
                     f"remainder_{tournament.id}"
                 )
                 
-                # Toujours autoriser les restes
+                # Contrainte d'équipes
                 model.Add(sum(players) == num_teams * TEAM_SIZE + remainder)
                 
                 if not self.config.allow_incomplete:
-                    penalty_vars.append(remainder * 100)
+                    # FORCER remainder = 0 (équipes complètes obligatoires)
+                    model.Add(remainder == 0)
                 else:
+                    # Pénaliser légèrement les restes
+                    penalty_vars.append(remainder)
                     penalty_vars.append(remainder)
         
         return penalty_vars

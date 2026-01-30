@@ -266,7 +266,8 @@ def suggest_improvements(
             partner = participants_map.get(participant.couple)
             if partner:
                 diff = abs(participant.voeux_jours_total - partner.voeux_jours_total)
-                if diff >= 3:
+                # Seulement si différence >= 5 jours ET au moins un veut beaucoup
+                if diff >= 5 and max(participant.voeux_jours_total, partner.voeux_jours_total) >= 6:
                     suggestions.append(
                         f"💡 {participant.nom} et {participant.couple} ont des vœux très "
                         f"différents ({participant.voeux_jours_total}j vs "

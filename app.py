@@ -343,6 +343,9 @@ with col_param3:
         - Avec 50-100, vous ne ratez aucune solution intéressante
         - Seules les 10 meilleures seront affichées"""
     )
+    
+    # Sauvegarder pour utilisation dans recalcul
+    st.session_state.max_solutions = max_solutions
 
 # ======================================================
 # SECTION 3: VALIDATION ET SUGGESTIONS
@@ -592,7 +595,7 @@ if st.session_state.solutions:
                 multipass = MultiPassSolver(SolverConfig(
                     include_o3=st.session_state.include_o3,
                     allow_incomplete=st.session_state.allow_incomplete,
-                    max_solutions=max_solutions,
+                    max_solutions=st.session_state.get('max_solutions', 50),
                     timeout_seconds=60.0
                 ))
                 
@@ -605,10 +608,14 @@ if st.session_state.solutions:
                 if result.status == 'success':
                     st.success(result.message)
                     st.session_state.solutions = result.solutions
-                    st.session_state.solver_info = {'pass': result.pass_number}
-                    # Nettoyer les candidats
+                    st.session_state.solver_info = {'pass': result.pass_number, 'relaxed': selected_to_relax}
+                    # Nettoyer les candidats pour pas qu'ils réapparaissent
                     if 'candidates' in st.session_state:
                         del st.session_state.candidates
+                    if 'participants_for_relax' in st.session_state:
+                        del st.session_state.participants_for_relax
+                    if 'active_tournaments' in st.session_state:
+                        del st.session_state.active_tournaments
                     st.rerun()
                 else:
                     st.error(result.message)
@@ -677,44 +684,22 @@ if st.session_state.solutions:
         key=lambda s: (s.max_consecutive_days, -s.get_quality_score())
     )
     
-    # Visualisations interactives
+    # Comparatif des variantes
     st.markdown("---")
-    st.subheader("📊 Visualisations Interactives")
+    st.subheader("📊 Comparatif des Variantes")
     
-    tab_viz1, tab_viz2, tab_viz3 = st.tabs(["📈 Comparaisons", "📅 Calendrier", "🎯 Détails"])
-    
-    with tab_viz1:
+    if len(filtered) > 1:
         col_comp1, col_comp2 = st.columns(2)
         
         with col_comp1:
-            if len(filtered) > 0:
-                fig_comparison = create_quality_comparison_chart(filtered[:10])
-                st.plotly_chart(fig_comparison, use_container_width=True, key="comp_chart")
+            fig_comparison = create_quality_comparison_chart(filtered[:10])
+            st.plotly_chart(fig_comparison, use_container_width=True, key="comp_chart")
         
         with col_comp2:
-            if len(filtered) > 0:
-                fig_pie = create_pie_chart_distribution(filtered[0])
-                st.plotly_chart(fig_pie, use_container_width=True, key="pie_chart")
-    
-    with tab_viz2:
-        if len(filtered) > 0:
-            col_cal1, col_cal2 = st.columns(2)
-            
-            with col_cal1:
-                fig_timeline = create_timeline_chart(filtered[0], active_tournaments)
-                st.plotly_chart(fig_timeline, use_container_width=True, key="timeline_chart")
-            
-            with col_cal2:
-                fig_heatmap = create_heatmap_chart(filtered[0])
-                st.plotly_chart(fig_heatmap, use_container_width=True, key="heatmap_chart")
-    
-    with tab_viz3:
-        if len(filtered) > 0:
-            fig_workload = create_workload_distribution_chart(filtered[0])
-            st.plotly_chart(fig_workload, use_container_width=True, key="workload_chart")
-            
-            fig_consecutive = create_consecutive_days_chart(filtered[0])
-            st.plotly_chart(fig_consecutive, use_container_width=True, key="consecutive_chart")
+            fig_overview = create_statistics_overview(filtered)
+            st.plotly_chart(fig_overview, use_container_width=True, key="overview_chart")
+    else:
+        st.info("Une seule variante disponible - voir détails ci-dessous")
     
     # Affichage des variantes
     st.markdown("---")
@@ -767,6 +752,33 @@ if st.session_state.solutions:
                         "Score Qualité",
                         f"{solution.get_quality_score():.0f}/100"
                     )
+                
+                # Graphiques de détail de cette variante
+                st.markdown("### 📊 Visualisations de cette Variante")
+                
+                tab_detail1, tab_detail2 = st.tabs(["📅 Calendrier", "📈 Analyses"])
+                
+                with tab_detail1:
+                    col_cal1, col_cal2 = st.columns(2)
+                    
+                    with col_cal1:
+                        fig_timeline = create_timeline_chart(solution, active_tournaments)
+                        st.plotly_chart(fig_timeline, use_container_width=True, key=f"timeline_{i}")
+                    
+                    with col_cal2:
+                        fig_heatmap = create_heatmap_chart(solution)
+                        st.plotly_chart(fig_heatmap, use_container_width=True, key=f"heatmap_{i}")
+                
+                with tab_detail2:
+                    col_ana1, col_ana2 = st.columns(2)
+                    
+                    with col_ana1:
+                        fig_workload = create_workload_distribution_chart(solution)
+                        st.plotly_chart(fig_workload, use_container_width=True, key=f"workload_{i}")
+                    
+                    with col_ana2:
+                        fig_consecutive = create_consecutive_days_chart(solution)
+                        st.plotly_chart(fig_consecutive, use_container_width=True, key=f"consecutive_{i}")
                 
                 # Planning par lieu
                 st.markdown("### 📍 Planning par Lieu")
