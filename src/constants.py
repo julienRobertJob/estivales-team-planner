@@ -78,13 +78,13 @@ DEFAULT_PARTICIPANTS = [
     ['Sébastien A', 'M', 'Kathleen', 0, 1, 'O3', False],
     ['Emilie', 'F', 'Julien', 2, 0, 'O3', False],
     ['Kathleen', 'F', 'Sébastien A', 2, 0, 'O3', False],
-    ['Delphine', 'F', 'Robin', 2, 0, 'E2', True],  # Corrigé : E2 au lieu de O2
+    ['Delphine', 'F', None, 2, 0, 'E2', False],  # Plus de couple, pas strict
     ['Sylvain', 'M', 'Sophie L', 2, 1, 'E3', False],
-    ['Robin', 'M', 'Delphine', 2, 1, 'E3', False],
+    ['Robin', 'M', None, 2, 1, 'E3', False],  # Plus de couple avec Delphine
     ['Rémy', 'M', 'Lise', 2, 1, 'O3', False],
-    ['Sophie S', 'F', 'Sébastien S', 2, 1, 'O3', False],  # Corrigé : Sophie S
+    ['Sophie S', 'F', 'Sébastien S', 2, 1, 'O3', False],
     ['Lise', 'F', 'Rémy', 1, 2, 'O3', False],
-    ['Sébastien S', 'M', 'Sophie S', 1, 2, 'O3', False],  # Corrigé : Sophie S
+    ['Sébastien S', 'M', 'Sophie S', 1, 2, 'O3', False],
     ['Sophie L', 'F', 'Sylvain', 1, 2, 'E3', False],
 ]
 

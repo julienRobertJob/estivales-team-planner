@@ -1,6 +1,6 @@
 """
-Application Streamlit pour l'organisateur d'Estivales de Volley
-Version refactorisée avec tests automatiques
+Application Streamlit pour l'Organisateur d'Équipes - Estivales de Volley
+Version 2.1 avec Graphiques Plotly et Assistant Multi-Passes
 """
 import streamlit as st
 import pandas as pd
@@ -20,6 +20,21 @@ from src.validation import (
     validate_participants_data,
     validate_solution_feasibility,
     suggest_improvements
+)
+from src.multipass_solver import (
+    MultiPassSolver,
+    ConflictAnalyzer,
+    format_diagnostic_message
+)
+from src.visualizations import (
+    create_timeline_chart,
+    create_heatmap_chart,
+    create_workload_distribution_chart,
+    create_pie_chart_distribution,
+    create_consecutive_days_chart,
+    create_quality_comparison_chart,
+    create_gantt_chart,
+    create_statistics_overview
 )
 from src.ui_components import (
     render_participant_editor,
@@ -99,7 +114,7 @@ initialize_session_state()
 # ======================================================
 # HEADER
 # ======================================================
-st.markdown('<div class="main-header">🏐 Organisateur d\'Estivales de Volley</div>', 
+st.markdown('<div class="main-header">🏐 Organisateur d\'Équipes pour les Estivales de Volley</div>', 
             unsafe_allow_html=True)
 st.markdown("---")
 
@@ -138,16 +153,24 @@ with st.sidebar:
         4. Compléter les équipes
         """)
     
-    with st.expander("⚙️ Algorithme"):
+    with st.expander("📅 Disponibilité"):
         st.markdown("""
-        ### Fonction Objectif
-        L'algorithme **minimise les écarts** entre jours souhaités et joués.
+        ### Colonne "Dispo jusqu'à"
         
-        **Exemple**:
-        - Alice veut 2j → obtient 2j ✅
-        - Bob veut 6j → obtient 6j ✅
+        Indique le **dernier tournoi** auquel le participant peut participer.
         
-        Pas de sur-allocation ni de sous-allocation arbitraire.
+        **Exemples** :
+        - `E1` = Disponible uniquement pour l'Étape 1 (Sam-Dim)
+        - `E2` = Disponible jusqu'à l'Étape 2 (Mar-Mer) inclus
+        - `O3` = Disponible pour tous les tournois
+        
+        **Planning des tournois** :
+        - E1 : Samedi-Dimanche (SABLES D'OR)
+        - O1 : Lundi (ERQUY)
+        - E2 : Mardi-Mercredi (ERQUY)
+        - O2 : Jeudi (SAINT-CAST)
+        - E3 : Vendredi-Samedi (SAINT-CAST)
+        - O3 : Dimanche (SAINT-CAST)
         """)
     
     st.markdown("---")
@@ -240,9 +263,15 @@ with col_editor:
 with col_actions:
     st.markdown("#### Actions Rapides")
     
-    # Boutons d'exemple
-    if st.button("📝 Charger Exemple", use_container_width=True):
+    # Un seul bouton Reset qui recharge les données par défaut
+    if st.button("🔄 Réinitialiser", use_container_width=True, help="Recharger les données par défaut"):
         st.session_state.data = DEFAULT_PARTICIPANTS.copy()
+        st.session_state.include_o3 = False
+        st.session_state.allow_incomplete = False
+        if 'solutions' in st.session_state:
+            st.session_state.solutions = []
+        if 'solver_info' in st.session_state:
+            st.session_state.solver_info = {}
         st.rerun()
     
     # Valider les données
@@ -307,7 +336,12 @@ with col_param3:
         max_value=100,
         value=50,
         step=10,
-        help="Plus de solutions = calcul plus long mais plus de choix"
+        help="""Nombre maximum de solutions différentes à générer.
+        
+        - Plus de solutions = plus de choix mais calcul plus long
+        - L'algorithme s'arrête dès qu'il en trouve assez
+        - Avec 50-100, vous ne ratez aucune solution intéressante
+        - Seules les 10 meilleures seront affichées"""
     )
 
 # ======================================================
@@ -349,7 +383,7 @@ except Exception as e:
     participants = []
 
 # ======================================================
-# SECTION 4: CALCUL
+# SECTION 4: CALCUL AVEC MULTIPASS
 # ======================================================
 st.markdown("---")
 st.header("3. Calcul des Variantes")
@@ -358,6 +392,13 @@ if st.button("🚀 Calculer les Variantes", type="primary", use_container_width=
     if not participants:
         st.error("❌ Veuillez configurer au moins un participant valide")
     else:
+        # Avertissement si calcul long
+        if len(participants) > 15:
+            st.warning(
+                "⏱️ Avec plus de 15 participants, le calcul peut prendre 30-60 secondes. "
+                "Patience !"
+            )
+        
         # Préparer les données
         active_tournaments = [
             Tournament(**t) for t in TOURNAMENTS
@@ -368,67 +409,84 @@ if st.button("🚀 Calculer les Variantes", type="primary", use_container_width=
             include_o3=st.session_state.include_o3,
             allow_incomplete=st.session_state.allow_incomplete,
             max_solutions=max_solutions,
-            timeout_seconds=120.0
+            timeout_seconds=60.0  # Réduit pour Streamlit Cloud (timeout 90s)
         )
         
         # Zone de progression
         progress_container = st.empty()
-        progress_bar = st.progress(0)
         status_text = st.empty()
-        log_container = st.empty()
         
-        def update_progress(current, total, time_elapsed):
-            """Callback de progression"""
-            progress = min(current / total, 1.0)
-            progress_bar.progress(progress)
-            status_text.text(
-                f"Solutions trouvées : {current}/{total} | "
-                f"Temps écoulé : {time_elapsed:.1f}s"
-            )
+        # Utiliser le MultiPassSolver
+        multipass = MultiPassSolver(config)
         
-        # Lancer le solver
+        # Callback de progression
+        def progress_callback(phase, message):
+            if phase == "pass1":
+                status_text.info(f"🔍 **Pass 1**: {message}")
+            elif phase == "pass2":
+                status_text.warning(f"🔍 **Pass 2**: {message}")
+            elif phase == "pass3":
+                status_text.info(f"🔄 **Pass 3**: {message}")
+        
+        # Lancer la résolution multi-passes
         status_text.text("🔨 Construction du modèle...")
-        solver = TournamentSolver(config)
         
-        status_text.text("🚀 Recherche de solutions...")
-        solutions, status, info = solver.solve(
+        result = multipass.solve_multipass(
             participants,
             active_tournaments,
-            progress_callback=update_progress
+            progress_callback=progress_callback
         )
         
-        # Clear progress indicators
-        progress_bar.empty()
         status_text.empty()
         
-        # Afficher le résultat
-        if status == "OPTIMAL" or status == "FEASIBLE":
-            st.success(
-                f"✅ Calcul terminé ! {len(solutions)} solution(s) trouvée(s) "
-                f"en {info['elapsed_time']:.1f}s"
-            )
+        # Traiter le résultat
+        if result.status == 'success':
+            st.success(result.message)
             
-            # Sauvegarder
-            st.session_state.solutions = solutions
-            st.session_state.solver_info = info
+            # Sauvegarder les solutions
+            st.session_state.solutions = result.solutions
+            st.session_state.solver_info = {'pass': result.pass_number}
             
-        elif status == "INFEASIBLE":
-            st.error(
-                "❌ Aucune solution trouvée avec ces contraintes. "
-            )
-            st.markdown("""
-            ### Suggestions pour débloquer:
-            1. ✅ Activer "Autoriser équipes incomplètes"
-            2. ✅ Décocher "Respect_Voeux" pour certains participants
-            3. ✅ Réduire les vœux de certains participants
-            4. ✅ Inclure l'Open du Dimanche (O3) pour plus de places
-            """)
-        else:
-            st.warning(f"⚠️ Statut du solver : {status}")
+            if result.relaxed_participants:
+                st.info(f"ℹ️ Participants lésés: {', '.join(result.relaxed_participants)}")
         
-        # Afficher les infos de debug
-        with st.expander("🔍 Informations de debug"):
-            st.json(info)
+        elif result.status == 'need_user_choice':
+            st.warning(result.message)
+            
+            # Sauvegarder les solutions partielles et les candidats
+            if result.solutions:
+                st.session_state.solutions = result.solutions
+            st.session_state.candidates = result.candidates_if_failed
+            st.session_state.solver_info = {'pass': result.pass_number}
+            st.session_state.active_tournaments = active_tournaments
+            st.session_state.participants_for_relax = participants
+            
+            st.info("👇 Voir la section 'Aide au Choix' ci-dessous pour sélectionner qui léser")
+        
+        elif result.status == 'impossible':
+            st.error(result.message)
+            
+            # Diagnostic automatique
+            diagnostics = ConflictAnalyzer.analyze_why_no_solution(
+                participants,
+                active_tournaments,
+                config
+            )
+            
+            diagnostic_message = format_diagnostic_message(diagnostics)
+            st.markdown(diagnostic_message)
+            
+            # Sauvegarder solutions partielles si elles existent
+            if result.solutions:
+                st.info(f"ℹ️ {len(result.solutions)} solution(s) partielle(s) trouvée(s) malgré tout")
+                st.session_state.solutions = result.solutions
+                st.session_state.solver_info = {'pass': result.pass_number}
+        
+        else:  # partial_success
+            st.warning(result.message)
+            if result.solutions:
+                st.session_state.solutions = result.solutions
+                st.session_state.solver_info = {'pass': result.pass_number}
 
 # ======================================================
 # SECTION 5: RÉSULTATS
@@ -438,6 +496,12 @@ if st.session_state.solutions:
     st.header("4. Résultats")
     
     solutions = st.session_state.solutions
+    
+    # Reconstruire active_tournaments pour l'affichage
+    active_tournaments = [
+        Tournament(**t) for t in TOURNAMENTS
+        if st.session_state.include_o3 or t['id'] != 'O3'
+    ]
     
     # Statistiques générales
     st.subheader("📊 Statistiques Générales")
@@ -490,42 +554,101 @@ if st.session_state.solutions:
         help="Score moyen de toutes les solutions (plus élevé = mieux)"
     )
     
-    # Aide au choix
+    # Aide au choix - FUSIONNÉE
     st.markdown("---")
     st.subheader("🔍 Aide au Choix")
     
-    # Lister tous les participants lésés
+    # Vérifier s'il y a des candidats proposés par le multipass
+    has_candidates = 'candidates' in st.session_state and st.session_state.candidates
+    
+    if has_candidates:
+        # CAS 1: Le multipass a identifié des candidats à léser
+        st.info("💡 L'algorithme a identifié des participants qu'on peut léser pour débloquer")
+        
+        candidates_data = []
+        for candidate in st.session_state.candidates:
+            candidates_data.append({
+                'Nom': candidate.participant_name,
+                'Vœux Étapes': candidate.current_wishes_etape,
+                'Vœux Opens': candidate.current_wishes_open,
+                'Jours si lésé': candidate.impact_days_if_relaxed,
+                'Action': candidate.reason
+            })
+        
+        # Trier par jours si lésé DESCENDANT (ceux qui joueraient le plus en premier)
+        df_candidates = pd.DataFrame(candidates_data).sort_values('Jours si lésé', ascending=False)
+        
+        st.dataframe(df_candidates, use_container_width=True, hide_index=True)
+        
+        # Sélection
+        selected_to_relax = st.multiselect(
+            "Sélectionnez qui accepter de léser:",
+            options=[c['Nom'] for c in candidates_data],
+            help="Cochez les participants dont vous acceptez de ne pas respecter entièrement les vœux"
+        )
+        
+        if selected_to_relax and st.button("🔄 Recalculer avec ces relaxations", type="primary"):
+            with st.spinner("Calcul avec relaxations..."):
+                multipass = MultiPassSolver(SolverConfig(
+                    include_o3=st.session_state.include_o3,
+                    allow_incomplete=st.session_state.allow_incomplete,
+                    max_solutions=max_solutions,
+                    timeout_seconds=60.0
+                ))
+                
+                result = multipass.solve_with_relaxation(
+                    st.session_state.participants_for_relax,
+                    st.session_state.active_tournaments,
+                    relax_names=selected_to_relax
+                )
+                
+                if result.status == 'success':
+                    st.success(result.message)
+                    st.session_state.solutions = result.solutions
+                    st.session_state.solver_info = {'pass': result.pass_number}
+                    # Nettoyer les candidats
+                    if 'candidates' in st.session_state:
+                        del st.session_state.candidates
+                    st.rerun()
+                else:
+                    st.error(result.message)
+    
+    # CAS 2: Filtrer les solutions existantes par participants lésés
     all_violated = sorted(list(set().union(*(s.violated_wishes for s in solutions))))
     
-    if all_violated:
+    if all_violated and not has_candidates:
+        st.info("📊 Certains participants ont leurs vœux non respectés dans les solutions")
+        
         col_filter1, col_filter2 = st.columns([2, 3])
         
         with col_filter1:
             accepted_violated = st.multiselect(
-                "Qui acceptez-vous de léser ?",
+                "Filtrer par participants lésés acceptés:",
                 options=all_violated,
-                help="Sélectionnez les participants dont vous acceptez de ne pas respecter les vœux"
+                help="Sélectionnez pour ne voir que les solutions où SEULEMENT ces participants sont lésés"
             )
         
         with col_filter2:
-            if all_violated:
-                # Tableau récapitulatif
-                violated_stats = []
-                for name in all_violated:
-                    # Trouver le min de jours joués si lésé
-                    min_days = min(
-                        s.get_participant_stats(name)['jours_joues']
-                        for s in solutions
-                        if name in s.violated_wishes
-                    )
+            # Tableau récapitulatif avec données correctes
+            violated_stats = []
+            for name in all_violated:
+                # Trouver les stats dans les solutions où cette personne est lésée
+                days_when_violated = [
+                    s.get_participant_stats(name)['jours_joues']
+                    for s in solutions
+                    if name in s.violated_wishes
+                ]
+                
+                if days_when_violated:
                     violated_stats.append({
                         'Nom': name,
-                        'Jours si lésé': min_days
+                        'Jours si lésé': max(days_when_violated)  # Max pour montrer le meilleur cas
                     })
-                
+            
+            if violated_stats:
                 df_violated = pd.DataFrame(violated_stats).sort_values(
                     'Jours si lésé',
-                    ascending=True
+                    ascending=False  # DESCENDANT: les plus hauts en premier
                 )
                 
                 st.dataframe(
@@ -542,9 +665,10 @@ if st.session_state.solutions:
                 if s.violated_wishes.issubset(set(accepted_violated))
             ]
         else:
-            filtered = [s for s in solutions if len(s.violated_wishes) == 0]
+            filtered = solutions
     else:
-        st.success("🎉 Toutes les solutions respectent tous les vœux !")
+        if not has_candidates:
+            st.success("🎉 Toutes les solutions respectent tous les vœux !")
         filtered = solutions
     
     # Trier par max_consecutive_days puis qualité
@@ -552,6 +676,45 @@ if st.session_state.solutions:
         filtered,
         key=lambda s: (s.max_consecutive_days, -s.get_quality_score())
     )
+    
+    # Visualisations interactives
+    st.markdown("---")
+    st.subheader("📊 Visualisations Interactives")
+    
+    tab_viz1, tab_viz2, tab_viz3 = st.tabs(["📈 Comparaisons", "📅 Calendrier", "🎯 Détails"])
+    
+    with tab_viz1:
+        col_comp1, col_comp2 = st.columns(2)
+        
+        with col_comp1:
+            if len(filtered) > 0:
+                fig_comparison = create_quality_comparison_chart(filtered[:10])
+                st.plotly_chart(fig_comparison, use_container_width=True, key="comp_chart")
+        
+        with col_comp2:
+            if len(filtered) > 0:
+                fig_pie = create_pie_chart_distribution(filtered[0])
+                st.plotly_chart(fig_pie, use_container_width=True, key="pie_chart")
+    
+    with tab_viz2:
+        if len(filtered) > 0:
+            col_cal1, col_cal2 = st.columns(2)
+            
+            with col_cal1:
+                fig_timeline = create_timeline_chart(filtered[0], active_tournaments)
+                st.plotly_chart(fig_timeline, use_container_width=True, key="timeline_chart")
+            
+            with col_cal2:
+                fig_heatmap = create_heatmap_chart(filtered[0])
+                st.plotly_chart(fig_heatmap, use_container_width=True, key="heatmap_chart")
+    
+    with tab_viz3:
+        if len(filtered) > 0:
+            fig_workload = create_workload_distribution_chart(filtered[0])
+            st.plotly_chart(fig_workload, use_container_width=True, key="workload_chart")
+            
+            fig_consecutive = create_consecutive_days_chart(filtered[0])
+            st.plotly_chart(fig_consecutive, use_container_width=True, key="consecutive_chart")
     
     # Affichage des variantes
     st.markdown("---")
