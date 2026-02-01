@@ -175,47 +175,45 @@ class TestSolverObjective:
         TEST CRITIQUE: Vérifie que l'objectif minimise bien les écarts
         
         Configuration:
-        - Alice veut 2 jours (1 étape)
-        - Bob veut 2 jours (1 étape)
+        - 3 Femmes veulent 1 étape chacune
+        - 3 Hommes veulent 1 étape chacun
         - 3 étapes disponibles (6 jours possibles)
         
         Solution attendue: chacun joue 1 étape (2j), pas plus
-        Solution interdite: Alice=6j, Bob=0j (maximise au lieu de respecter)
+        Solution interdite: Certains jouent 3 étapes, d'autres 0
         """
-        alice = Participant("Alice", "F", None, 1, 0, "O3", False)
-        bob = Participant("Bob", "M", None, 1, 0, "O3", False)
-        
-        participants = [alice, bob]
+        participants = [
+            Participant("Alice", "F", None, 1, 0, "O3", False),
+            Participant("Betty", "F", None, 1, 0, "O3", False),
+            Participant("Clara", "F", None, 1, 0, "O3", False),
+            Participant("Dan", "M", None, 1, 0, "O3", False),
+            Participant("Ed", "M", None, 1, 0, "O3", False),
+            Participant("Fred", "M", None, 1, 0, "O3", False),
+        ]
         tournaments = [Tournament(**t) for t in TOURNAMENTS if t['type'] == 'etape'][:3]
         
         config = SolverConfig(
             max_solutions=10, 
             timeout_seconds=30.0,
-            allow_incomplete=True  # Autoriser équipes incomplètes
+            allow_incomplete=False  # Équipes de 3 exactement
         )
         solver = TournamentSolver(config)
         
         solutions, status, info = solver.solve(participants, tournaments)
         
-        assert len(solutions) > 0, f"Devrait trouver au moins une solution. Status: {status}"
+        assert len(solutions) > 0, \
+            f"Devrait trouver au moins une solution. Status: {status}, Message: {info}"
         
         # Analyser la meilleure solution
         best = max(solutions, key=lambda s: s.get_quality_score())
         
-        alice_stats = best.get_participant_stats("Alice")
-        bob_stats = best.get_participant_stats("Bob")
-        
-        # Alice et Bob devraient jouer exactement 1 étape chacun (2 jours)
-        assert alice_stats['etapes_jouees'] == 1, \
-            f"Alice devrait jouer 1 étape, pas {alice_stats['etapes_jouees']}"
-        assert bob_stats['etapes_jouees'] == 1, \
-            f"Bob devrait jouer 1 étape, pas {bob_stats['etapes_jouees']}"
-        
-        # Les écarts doivent être 0
-        assert alice_stats['ecart'] == 0, \
-            f"Alice: écart devrait être 0, pas {alice_stats['ecart']}"
-        assert bob_stats['ecart'] == 0, \
-            f"Bob: écart devrait être 0, pas {bob_stats['ecart']}"
+        # TOUS devraient jouer exactement 1 étape (2 jours)
+        for p in participants:
+            stats = best.get_participant_stats(p.nom)
+            assert stats['etapes_jouees'] == 1, \
+                f"{p.nom} devrait jouer 1 étape, pas {stats['etapes_jouees']}"
+            assert stats['ecart'] == 0, \
+                f"{p.nom}: écart devrait être 0, pas {stats['ecart']}"
     
     def test_objective_balances_when_conflict(self):
         """

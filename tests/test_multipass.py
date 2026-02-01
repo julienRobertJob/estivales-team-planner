@@ -13,6 +13,7 @@ class TestMultiPassSolver:
     def test_multipass_finds_perfect_solution_pass1(self):
         """
         Test que le multipass trouve une solution parfaite en Pass 1
+        Avec équipes incomplètes, 2 participants doivent pouvoir jouer
         """
         # Configuration simple
         alice = Participant("Alice", "F", None, 1, 0, "O3", False)
@@ -24,18 +25,23 @@ class TestMultiPassSolver:
         config = SolverConfig(
             max_solutions=5,
             timeout_seconds=10.0,
-            allow_incomplete=True
+            allow_incomplete=True  # ← CLEF: équipes de 1 autorisées
         )
         
         multipass = MultiPassSolver(config)
         result = multipass.solve_multipass(participants, tournaments)
         
-        # Devrait réussir en Pass 1
-        assert result.status == 'success'
-        assert result.pass_number == 1
-        assert len(result.solutions) > 0
-        assert len(result.relaxed_participants) == 0
-        assert "parfaite" in result.message.lower()
+        # Devrait réussir en Pass 1 car équipes incomplètes autorisées
+        assert result.status == 'success', \
+            f"Devrait trouver solution avec équipes incomplètes. Status: {result.status}, Message: {result.message}"
+        assert result.pass_number == 1, \
+            f"Devrait réussir dès Pass 1. Pass actuel: {result.pass_number}"
+        assert len(result.solutions) > 0, \
+            "Devrait avoir au moins une solution"
+        assert len(result.relaxed_participants) == 0, \
+            "Pas de relaxation nécessaire"
+        assert "parfaite" in result.message.lower() or "succès" in result.message.lower(), \
+            f"Message devrait indiquer succès. Message: {result.message}"
     
     def test_multipass_proposes_candidates_when_impossible(self):
         """

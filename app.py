@@ -122,55 +122,228 @@ st.markdown("---")
 # SIDEBAR - AIDE ET CONFIGURATION
 # ======================================================
 with st.sidebar:
-    st.header("📚 Aide")
+    st.header("📚 Guide Utilisateur")
     
-    with st.expander("ℹ️ Comment utiliser"):
+    with st.expander("🚀 Démarrage Rapide", expanded=True):
         st.markdown("""
-        ### Étapes
-        1. **Configurer les participants** avec leurs vœux
-        2. **Ajuster les paramètres** (Include O3, équipes incomplètes)
-        3. **Lancer le calcul** avec le bouton vert
-        4. **Analyser les variantes** proposées
-        5. **Choisir** la meilleure solution
+        ### 📋 Workflow en 5 Étapes
         
-        ### Conseils
-        - Utilisez 'Respect_Voeux' avec parcimonie
-        - Activez 'Équipes incomplètes' si besoin
-        - Plus de vœux stricts = moins de solutions possibles
+        1. **📝 Configurer** les participants
+           - Nom, genre, couple
+           - Vœux étapes et opens
+           - Disponibilité
+           
+        2. **⚙️ Paramètres**
+           - Inclure O3 (dimanche) ?
+           - Autoriser équipes incomplètes ?
+           - Nombre de solutions à chercher
+           
+        3. **🚀 Calculer** (20-45 secondes)
+           - PASS 1 : Trouve le score optimal
+           - PASS 2 : Énumère TOUTES les variantes
+           
+        4. **🎯 Choisir le niveau**
+           - Parfaites (0 lésé)
+           - Excellentes (≤1j lésé)
+           - Acceptables (≤2j lésés)
+           - Compromis (>2j)
+           
+        5. **📊 Comparer** et **💾 Exporter**
+           - Analyser avec graphiques
+           - Choisir la meilleure variante
+           - Exporter en CSV
         """)
     
-    with st.expander("🔍 Comprendre les résultats"):
+    with st.expander("📊 Comprendre les Résultats"):
         st.markdown("""
-        ### Indicateurs
-        - **Lésés**: Participants dont les vœux ne sont pas respectés
-        - **Fatigue**: Participants jouant >3 jours consécutifs
-        - **Score qualité**: Note de 0 à 100 de la solution
+        ### 🎯 Niveaux de Compromis
         
-        ### Priorités
-        1. Respecter les vœux de chacun
-        2. Éviter >3 jours consécutifs
-        3. Équilibrer les charges
-        4. Compléter les équipes
+        **🎯 Parfaites**
+        - Tous les vœux respectés
+        - Aucun participant lésé
+        - Le scénario idéal !
+        
+        **🟢 Excellentes**
+        - Maximum 1 jour lésé par personne
+        - Impact minimal
+        - Très acceptable
+        
+        **🟡 Acceptables**
+        - Maximum 2 jours lésés par personne
+        - Compromis raisonnable
+        - À discuter avec les lésés
+        
+        **🟠 Compromis**
+        - Plus de 2 jours lésés
+        - Impact significatif
+        - Dernier recours
+        
+        ---
+        
+        ### 📈 Indicateurs Clés
+        
+        **Score Qualité (0-100)**
+        - 90-100 : Excellent
+        - 70-89 : Très bien
+        - 50-69 : Acceptable
+        - <50 : À éviter si possible
+        
+        **Lésés**
+        - Format : `Nom (-Xj)`
+        - Exemple : `Sophie (-2j)` = 2 jours de moins que souhaité
+        
+        **Fatigue**
+        - Alerte si >4 jours consécutifs
+        - Pénalise le score
+        - À surveiller pour bien-être
+        
+        **Max Consécutifs**
+        - Nombre max de jours d'affilée
+        - Idéal : ≤3 jours
+        - Acceptable : 4 jours
+        - Attention : ≥5 jours
         """)
     
-    with st.expander("📅 Disponibilité"):
+    with st.expander("🎓 Algorithme (Expert)"):
         st.markdown("""
-        ### Colonne "Dispo jusqu'à"
+        ### 🔬 Recherche Exhaustive 2-Passes
         
-        Indique le **dernier tournoi** auquel le participant peut participer.
+        **PASS 1 : Optimisation** (5-15s)
+        - Trouve le meilleur score possible
+        - Utilise optimisation OR-Tools
+        - Résultat : Score optimal S*
         
-        **Exemples** :
-        - `E1` = Disponible uniquement pour l'Étape 1 (Sam-Dim)
-        - `E2` = Disponible jusqu'à l'Étape 2 (Mar-Mer) inclus
-        - `O3` = Disponible pour tous les tournois
+        **PASS 2 : Énumération** (15-30s)
+        - Transforme en problème de satisfaction
+        - Contrainte : score = S*
+        - Énumère TOUTES les solutions
+        - Résultat : 20-200 variantes
         
-        **Planning des tournois** :
-        - E1 : Samedi-Dimanche (SABLES D'OR)
-        - O1 : Lundi (ERQUY)
-        - E2 : Mardi-Mercredi (ERQUY)
-        - O2 : Jeudi (SAINT-CAST)
-        - E3 : Vendredi-Samedi (SAINT-CAST)
-        - O3 : Dimanche (SAINT-CAST)
+        **Garantie Mathématique**
+        - Complétude : Toutes les solutions optimales
+        - Pas de permutation manquante
+        - Emilie/Delphine interchangeables trouvées
+        
+        ### 🎯 Critères d'Optimisation
+        
+        1. **Respect vœux** (poids: 1000)
+           - Minimiser écarts souhaits/réalité
+           
+        2. **Fatigue** (poids: 500)
+           - Pénaliser >3j consécutifs
+           
+        3. **Équipes** (poids: 10)
+           - Compléter à 3 si possible
+        
+        Score final = (écarts × 1000) + (fatigue × 500) + (incomplet × 10)
+        """)
+    
+    with st.expander("📅 Planning des Tournois"):
+        st.markdown("""
+        ### 📍 SABLES D'OR
+        **Étape 1** (E1) : Samedi-Dimanche
+        - 2 jours
+        - Séparé Hommes/Femmes
+        - Équipes de 3
+        
+        ### 📍 ERQUY
+        **Open 1** (O1) : Lundi
+        - 1 jour
+        - Mixte
+        - Équipes de 3
+        
+        **Étape 2** (E2) : Mardi-Mercredi
+        - 2 jours
+        - Séparé Hommes/Femmes
+        - Équipes de 3
+        
+        ### 📍 SAINT-CAST
+        **Open 2** (O2) : Jeudi
+        - 1 jour
+        - Mixte
+        - Équipes de 3
+        
+        **Étape 3** (E3) : Vendredi-Samedi
+        - 2 jours
+        - Séparé Hommes/Femmes
+        - Équipes de 3
+        
+        **Open 3** (O3) : Dimanche
+        - 1 jour
+        - Mixte
+        - Équipes de 3
+        - Optionnel (case à cocher)
+        
+        ---
+        
+        **Total si tout** : 9 jours (6j étapes + 3j opens)
+        **Sans O3** : 8 jours (6j étapes + 2j opens)
+        """)
+    
+    with st.expander("⚙️ Paramètres Avancés"):
+        st.markdown("""
+        ### 🎛️ Configuration
+        
+        **Inclure O3**
+        - Si décoché : Ignore le dimanche final
+        - Si coché : Inclut O3 dans le planning
+        - Recommandé : Selon disponibilités réelles
+        
+        **Autoriser équipes incomplètes**
+        - Si décoché : Équipes de 3 strictement
+        - Si coché : Permet 1-2 joueurs
+        - Recommandé : Oui si peu de participants
+        
+        **Solutions à chercher**
+        - 50-100 : Rapide, suffisant
+        - 100-200 : Plus de choix
+        - 200-500 : Maximum (lent)
+        - Limite l'énumération en PASS 2
+        
+        **Respect_Voeux**
+        - Case à cocher par participant
+        - Force égalité stricte souhaits = réalité
+        - ⚠️ Utiliser avec parcimonie !
+        - Trop de cases cochées = aucune solution
+        """)
+    
+    with st.expander("💡 Conseils & Astuces"):
+        st.markdown("""
+        ### ✅ Bonnes Pratiques
+        
+        1. **Commencer simple**
+           - Lancer avec données par défaut
+           - Observer les résultats
+           - Ajuster progressivement
+        
+        2. **Gérer les contraintes**
+           - Max 2-3 Respect_Voeux cochés
+           - Vœux raisonnables (≤6j total)
+           - Équilibrer H/F pour étapes
+        
+        3. **Interpréter les résultats**
+           - Privilégier niveau "Parfaites"
+           - Sinon "Excellentes" très OK
+           - Discuter avec les lésés si "Acceptables"
+        
+        4. **Utiliser les filtres**
+           - "Seulement opens lésés" = étapes OK
+           - "Max consécutifs" = limiter fatigue
+           - "Max total lésé" = global acceptable
+        
+        ### ⚠️ Pièges à Éviter
+        
+        - ❌ Trop de Respect_Voeux
+        - ❌ Vœux impossibles (ex: 3 étapes)
+        - ❌ Couples avec vœux opposés
+        - ❌ Trop peu de participants
+        
+        ### 🔧 Si Aucune Solution
+        
+        1. Décocher tous les Respect_Voeux
+        2. Activer "Équipes incomplètes"
+        3. Réduire les vœux de certains
+        4. Vérifier couples (disponibilités alignées)
         """)
     
     st.markdown("---")
@@ -334,7 +507,7 @@ with col_param3:
         "🔢 Solutions à chercher",
         min_value=10,
         max_value=100,
-        value=100,
+        value=50,
         step=10,
         help="""Nombre maximum de solutions différentes à générer.
         
@@ -557,118 +730,300 @@ if st.session_state.solutions:
         help="Score moyen de toutes les solutions (plus élevé = mieux)"
     )
     
-    # Aide au choix - Désactivé car 
-    # st.markdown("---")
-    # st.subheader("🔍 Aide au Choix")
+    # Aide au choix - FUSIONNÉE
+    st.markdown("---")
+    st.subheader("🔍 Aide au Choix")
     
-    # # Vérifier s'il y a des candidats proposés par le multipass
-    # has_candidates = 'candidates' in st.session_state and st.session_state.candidates
+    # Vérifier s'il y a des candidats proposés par le multipass
+    has_candidates = 'candidates' in st.session_state and st.session_state.candidates
     
-    # if has_candidates:
-    #     # CAS 1: Le multipass a identifié des candidats à léser
-    #     st.info("💡 L'algorithme a identifié des participants qu'on peut léser pour débloquer")
+    if has_candidates:
+        # CAS 1: Le multipass a identifié des candidats à léser
+        st.info("💡 L'algorithme a identifié des participants qu'on peut léser pour débloquer")
         
-    #     candidates_data = []
-    #     for candidate in st.session_state.candidates:
-    #         candidates_data.append({
-    #             'Nom': candidate.participant_name,
-    #             'Vœux Étapes': candidate.current_wishes_etape,
-    #             'Vœux Opens': candidate.current_wishes_open,
-    #             'Jours si lésé': candidate.impact_days_if_relaxed,
-    #             'Action': candidate.reason
-    #         })
+        candidates_data = []
+        for candidate in st.session_state.candidates:
+            candidates_data.append({
+                'Nom': candidate.participant_name,
+                'Vœux Étapes': candidate.current_wishes_etape,
+                'Vœux Opens': candidate.current_wishes_open,
+                'Jours si lésé': candidate.impact_days_if_relaxed,
+                'Action': candidate.reason
+            })
         
-    #     # Trier par jours si lésé DESCENDANT (ceux qui joueraient le plus en premier)
-    #     df_candidates = pd.DataFrame(candidates_data).sort_values('Jours si lésé', ascending=False)
+        # Trier par jours si lésé DESCENDANT (ceux qui joueraient le plus en premier)
+        df_candidates = pd.DataFrame(candidates_data).sort_values('Jours si lésé', ascending=False)
         
-    #     st.dataframe(df_candidates, use_container_width=True, hide_index=True)
+        st.dataframe(df_candidates, use_container_width=True, hide_index=True)
         
-    #     # Sélection
-    #     selected_to_relax = st.multiselect(
-    #         "Sélectionnez qui accepter de léser:",
-    #         options=[c['Nom'] for c in candidates_data],
-    #         help="Cochez les participants dont vous acceptez de ne pas respecter entièrement les vœux"
-    #     )
+        # Sélection
+        selected_to_relax = st.multiselect(
+            "Sélectionnez qui accepter de léser:",
+            options=[c['Nom'] for c in candidates_data],
+            help="Cochez les participants dont vous acceptez de ne pas respecter entièrement les vœux"
+        )
         
-    #     if selected_to_relax and st.button("🔄 Recalculer avec ces relaxations", type="primary"):
-    #         with st.spinner("Calcul avec relaxations..."):
-    #             multipass = MultiPassSolver(SolverConfig(
-    #                 include_o3=st.session_state.include_o3,
-    #                 allow_incomplete=st.session_state.allow_incomplete,
-    #                 max_solutions=st.session_state.get('max_solutions', 50),
-    #                 timeout_seconds=60.0
-    #             ))
+        if selected_to_relax and st.button("🔄 Recalculer avec ces relaxations", type="primary"):
+            with st.spinner("Calcul avec relaxations..."):
+                multipass = MultiPassSolver(SolverConfig(
+                    include_o3=st.session_state.include_o3,
+                    allow_incomplete=st.session_state.allow_incomplete,
+                    max_solutions=st.session_state.get('max_solutions', 50),
+                    timeout_seconds=60.0
+                ))
                 
-    #             result = multipass.solve_with_relaxation(
-    #                 st.session_state.participants_for_relax,
-    #                 st.session_state.active_tournaments,
-    #                 relax_names=selected_to_relax
-    #             )
+                result = multipass.solve_with_relaxation(
+                    st.session_state.participants_for_relax,
+                    st.session_state.active_tournaments,
+                    relax_names=selected_to_relax
+                )
                 
-    #             if result.status == 'success':
-    #                 st.success(result.message)
-    #                 st.session_state.solutions = result.solutions
-    #                 st.session_state.solver_info = {'pass': result.pass_number, 'relaxed': selected_to_relax}
-    #                 # Nettoyer les candidats pour pas qu'ils réapparaissent
-    #                 if 'candidates' in st.session_state:
-    #                     del st.session_state.candidates
-    #                 if 'participants_for_relax' in st.session_state:
-    #                     del st.session_state.participants_for_relax
-    #                 if 'active_tournaments' in st.session_state:
-    #                     del st.session_state.active_tournaments
-    #                 st.rerun()
-    #             else:
-    #                 st.error(result.message)
+                if result.status == 'success':
+                    st.success(result.message)
+                    st.session_state.solutions = result.solutions
+                    st.session_state.solver_info = {'pass': result.pass_number, 'relaxed': selected_to_relax}
+                    # Nettoyer les candidats pour pas qu'ils réapparaissent
+                    if 'candidates' in st.session_state:
+                        del st.session_state.candidates
+                    if 'participants_for_relax' in st.session_state:
+                        del st.session_state.participants_for_relax
+                    if 'active_tournaments' in st.session_state:
+                        del st.session_state.active_tournaments
+                    st.rerun()
+                else:
+                    st.error(result.message)
     
-    # # CAS 2: Afficher info sur les solutions existantes (pas de filtrage automatique)
-    # all_violated = sorted(list(set().union(*(s.violated_wishes for s in solutions))))
-    # if all_violated and not has_candidates:
-    #     st.info("📊 Analyse des participants lésés dans les solutions")
+    # CAS 2: Afficher info sur les solutions existantes (pas de filtrage automatique)
+    all_violated = sorted(list(set().union(*(s.violated_wishes for s in solutions))))
+    
+    if all_violated and not has_candidates:
+        st.info("📊 Analyse des participants lésés dans les solutions")
         
-    #     # Tableau récapitulatif avec vraies données
-    #     violated_stats = []
-    #     for name in all_violated:
-    #         # Compter dans combien de solutions cette personne est lésée
-    #         solutions_with_violation = [s for s in solutions if name in s.violated_wishes]
+        # Tableau récapitulatif avec vraies données
+        violated_stats = []
+        for name in all_violated:
+            # Compter dans combien de solutions cette personne est lésée
+            solutions_with_violation = [s for s in solutions if name in s.violated_wishes]
             
-    #         if solutions_with_violation:
-    #             # Écart moyen quand lésé
-    #             avg_ecart = sum(
-    #                 abs(s.get_participant_stats(name)['ecart'])
-    #                 for s in solutions_with_violation
-    #             ) / len(solutions_with_violation)
+            if solutions_with_violation:
+                # Écart moyen quand lésé
+                avg_ecart = sum(
+                    abs(s.get_participant_stats(name)['ecart'])
+                    for s in solutions_with_violation
+                ) / len(solutions_with_violation)
                 
-    #             violated_stats.append({
-    #                 'Nom': name,
-    #                 'Lésé dans': f"{len(solutions_with_violation)}/{len(solutions)} solutions",
-    #                 'Écart moyen': f"{avg_ecart:.1f}j"
-    #             })
+                violated_stats.append({
+                    'Nom': name,
+                    'Lésé dans': f"{len(solutions_with_violation)}/{len(solutions)} solutions",
+                    'Écart moyen': f"{avg_ecart:.1f}j"
+                })
         
-    #     if violated_stats:
-    #         df_violated = pd.DataFrame(violated_stats)
-    #         st.dataframe(
-    #             df_violated,
-    #             use_container_width=True,
-    #             hide_index=True,
-    #             height=min(300, 35 * (len(df_violated) + 1))
-    #         )
+        if violated_stats:
+            df_violated = pd.DataFrame(violated_stats)
+            st.dataframe(
+                df_violated,
+                use_container_width=True,
+                hide_index=True,
+                height=min(300, 35 * (len(df_violated) + 1))
+            )
         
-    #     # PAS DE FILTRAGE - Afficher toutes les solutions
-    #     filtered = solutions
-    # else:
-    #     if not has_candidates:
-    #         st.success("🎉 Toutes les solutions respectent tous les vœux !")
-    #     filtered = solutions
+        # PAS DE FILTRAGE - Afficher toutes les solutions
+        filtered = solutions
+    else:
+        if not has_candidates:
+            st.success("🎉 Toutes les solutions respectent tous les vœux !")
+        filtered = solutions
     
     # Trier par max_consecutive_days puis qualité
     filtered = sorted(
-        solutions, # si on décommente au dessus remettre : filtered,
+        filtered,
         key=lambda s: (s.max_consecutive_days, -s.get_quality_score())
     )
     
-    # Comparatif des variantes
+    # Navigation par niveaux de compromis
     st.markdown("---")
-    st.subheader("📊 Comparatif des Variantes")
+    st.subheader("🎯 Navigation par Niveau de Compromis")
+    
+    # Calculer les catégories
+    perfect = []
+    one_day_max = []
+    two_days_max = []
+    more_than_two = []
+    
+    for sol in solutions:
+        if len(sol.violated_wishes) == 0:
+            perfect.append(sol)
+        else:
+            # Calculer l'écart max parmi tous les participants lésés
+            max_ecart = 0
+            for name in sol.violated_wishes:
+                stats = sol.get_participant_stats(name)
+                ecart = abs(stats['ecart'])
+                if ecart > max_ecart:
+                    max_ecart = ecart
+            
+            if max_ecart == 1:
+                one_day_max.append(sol)
+            elif max_ecart == 2:
+                two_days_max.append(sol)
+            else:
+                more_than_two.append(sol)
+    
+    # Afficher les compteurs
+    st.markdown("#### 📊 Répartition des Solutions")
+    
+    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+    
+    with col_stat1:
+        st.metric("🎯 Parfaites", len(perfect))
+        st.caption("0 jour lésé")
+    
+    with col_stat2:
+        st.metric("🟢 Excellentes", len(one_day_max))
+        st.caption("Max 1j lésé/personne")
+    
+    with col_stat3:
+        st.metric("🟡 Acceptables", len(two_days_max))
+        st.caption("Max 2j lésés/personne")
+    
+    with col_stat4:
+        st.metric("🟠 Compromis", len(more_than_two))
+        st.caption(">2j lésés/personne")
+    
+    # Sélecteur de niveau
+    st.markdown("#### 🔍 Choisir le Niveau de Compromis")
+    
+    niveau_options = []
+    if len(perfect) > 0:
+        niveau_options.append(f"🎯 Parfaites ({len(perfect)})")
+    if len(one_day_max) > 0:
+        niveau_options.append(f"🟢 Excellentes ({len(one_day_max)})")
+    if len(two_days_max) > 0:
+        niveau_options.append(f"🟡 Acceptables ({len(two_days_max)})")
+    if len(more_than_two) > 0:
+        niveau_options.append(f"🟠 Compromis ({len(more_than_two)})")
+    
+    if len(niveau_options) == 0:
+        st.error("Aucune solution trouvée")
+        st.stop()
+    
+    # Par défaut, sélectionner la meilleure catégorie disponible
+    niveau_selectionne = st.selectbox(
+        "Niveau de compromis à afficher",
+        options=niveau_options,
+        index=0,
+        help="Sélectionnez le niveau de compromis acceptable pour filtrer les variantes"
+    )
+    
+    # Filtrer selon le niveau sélectionné
+    if "Parfaites" in niveau_selectionne:
+        filtered_by_level = perfect
+        st.success(f"✅ Affichage de {len(filtered_by_level)} solutions parfaites (tous les vœux respectés)")
+    elif "Excellentes" in niveau_selectionne:
+        filtered_by_level = one_day_max
+        st.info(f"ℹ️ Affichage de {len(filtered_by_level)} solutions excellentes (max 1 jour lésé par personne)")
+    elif "Acceptables" in niveau_selectionne:
+        filtered_by_level = two_days_max
+        st.warning(f"⚠️ Affichage de {len(filtered_by_level)} solutions acceptables (max 2 jours lésés par personne)")
+    else:
+        filtered_by_level = more_than_two
+        st.error(f"⚠️ Affichage de {len(filtered_by_level)} solutions compromis (>2 jours lésés par personne)")
+    
+    # Filtres avancés supplémentaires
+    st.markdown("#### 🔧 Filtres Avancés (optionnels)")
+    
+    col_filt1, col_filt2, col_filt3 = st.columns(3)
+    
+    with col_filt1:
+        # Filtre sur catégorie (opens/étapes)
+        show_opens_only = st.checkbox(
+            "Seulement opens lésés",
+            value=False,
+            help="Afficher uniquement les solutions où seuls les opens sont lésés (étapes OK)"
+        )
+    
+    with col_filt2:
+        # Filtre sur max consécutifs
+        max_consecutifs_vals = [sol.max_consecutive_days for sol in filtered_by_level]
+        if max_consecutifs_vals:
+            min_consec = min(max_consecutifs_vals)
+            max_consec = max(max_consecutifs_vals)
+            
+            # Si min = max, pas besoin de slider
+            if min_consec == max_consec:
+                st.metric("Max jours consécutifs", min_consec)
+                max_consec_filter = min_consec
+            else:
+                max_consec_filter = st.slider(
+                    "Max jours consécutifs",
+                    min_value=min_consec,
+                    max_value=max_consec,
+                    value=max_consec,
+                    help="Afficher seulement les solutions avec au plus X jours consécutifs"
+                )
+        else:
+            max_consec_filter = 10
+    
+    with col_filt3:
+        # Filtre sur nombre total de jours lésés
+        total_jours_leses_vals = []
+        for sol in filtered_by_level:
+            total = sum(
+                abs(sol.get_participant_stats(p.nom)['ecart'])
+                for p in participants
+                if sol.get_participant_stats(p.nom)['ecart'] < 0
+            )
+            total_jours_leses_vals.append(total)
+        
+        if total_jours_leses_vals and max(total_jours_leses_vals) > 0:
+            max_total_lese = st.slider(
+                "Max jours lésés total",
+                min_value=0,
+                max_value=max(total_jours_leses_vals),
+                value=max(total_jours_leses_vals),
+                help="Somme de tous les jours lésés pour tous les participants"
+            )
+        else:
+            max_total_lese = 0
+    
+    # Appliquer les filtres avancés
+    filtered = []
+    
+    for sol in filtered_by_level:
+        # Filtre opens only
+        if show_opens_only:
+            only_opens = True
+            for name in sol.violated_wishes:
+                stats = sol.get_participant_stats(name)
+                participant = next(p for p in participants if p.nom == name)
+                if stats['etapes_jouees'] < participant.voeux_etape:
+                    only_opens = False
+                    break
+            if not only_opens:
+                continue
+        
+        # Filtre max consécutifs
+        if sol.max_consecutive_days > max_consec_filter:
+            continue
+        
+        # Filtre total jours lésés
+        total_lese = sum(
+            abs(sol.get_participant_stats(p.nom)['ecart'])
+            for p in participants
+            if sol.get_participant_stats(p.nom)['ecart'] < 0
+        )
+        if total_lese > max_total_lese:
+            continue
+        
+        filtered.append(sol)
+    
+    if len(filtered) == 0:
+        st.warning("⚠️ Aucune solution ne correspond aux filtres sélectionnés. Essayez de les assouplir.")
+        st.stop()
+    
+    # Comparatif des variantes filtrées
+    st.markdown("---")
+    st.subheader(f"📊 Comparatif ({len(filtered)} variantes affichées)")
     
     if len(filtered) > 1:
         col_comp1, col_comp2 = st.columns(2)

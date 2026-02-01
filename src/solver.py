@@ -89,7 +89,10 @@ class TournamentSolver:
         progress_callback=None
     ) -> Tuple[List[Solution], str, Dict]:
         """
-        Résout le problème d'optimisation.
+        Résout le problème en 2 PASSES pour trouver TOUTES les solutions optimales.
+        
+        PASS 1: Trouve le score optimal (optimisation)
+        PASS 2: Énumère TOUTES les solutions ayant ce score (satisfaction)
         
         Args:
             participants: Liste des participants
@@ -99,38 +102,87 @@ class TournamentSolver:
         Returns:
             Tuple (solutions, status, info)
         """
-        # Construire le modèle
-        model, variables, auxiliary_vars = self._build_model(participants, tournaments)
+        start_time = time.time()
         
-        # Configurer le solver
-        solver = cp_model.CpSolver()
-        solver.parameters.enumerate_all_solutions = True
-        solver.parameters.max_time_in_seconds = self.config.timeout_seconds
+        # ================================================================
+        # PASS 1: TROUVER LE SCORE OPTIMAL
+        # ================================================================
+        if progress_callback:
+            progress_callback(0, 1, 0)
         
-        # Collecter les solutions
+        model_pass1, variables_pass1, auxiliary_vars_pass1 = self._build_model(
+            participants, tournaments
+        )
+        
+        solver_pass1 = cp_model.CpSolver()
+        solver_pass1.parameters.max_time_in_seconds = min(30.0, self.config.timeout_seconds / 3)
+        solver_pass1.parameters.log_search_progress = False
+        solver_pass1.parameters.num_search_workers = 8
+        
+        status_pass1 = solver_pass1.Solve(model_pass1)
+        
+        if status_pass1 not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+            # Pas de solution trouvée
+            elapsed = time.time() - start_time
+            return [], solver_pass1.StatusName(status_pass1), {
+                'status': solver_pass1.StatusName(status_pass1),
+                'num_solutions': 0,
+                'elapsed_time': elapsed,
+                'num_branches': solver_pass1.NumBranches(),
+                'wall_time': solver_pass1.WallTime(),
+                'pass': 1
+            }
+        
+        # Récupérer le score optimal trouvé
+        optimal_score = int(solver_pass1.ObjectiveValue())
+        
+        # ================================================================
+        # PASS 2: ÉNUMÉRER TOUTES LES SOLUTIONS À CE SCORE
+        # ================================================================
+        if progress_callback:
+            elapsed = time.time() - start_time
+            progress_callback(1, 2, elapsed)
+        
+        # Reconstruire le modèle SANS objectif (satisfaction pure)
+        model_pass2, variables_pass2, auxiliary_vars_pass2 = self._build_model_for_enumeration(
+            participants, tournaments, optimal_score
+        )
+        
+        # Collecter TOUTES les solutions
         collector = SolutionCollector(
-            variables,
+            variables_pass2,
             tournaments,
             participants,
             self.config.max_solutions,
             progress_callback
         )
         
-        # Lancer la résolution
-        start_time = time.time()
-        status = solver.Solve(model, collector)
+        solver_pass2 = cp_model.CpSolver()
+        remaining_time = self.config.timeout_seconds - (time.time() - start_time)
+        solver_pass2.parameters.max_time_in_seconds = max(10.0, remaining_time)
+        solver_pass2.parameters.log_search_progress = False
+        
+        # CLEF: Maintenant qu'on n'a PAS d'objectif à minimiser,
+        # on peut utiliser SearchForAllSolutions !
+        status_pass2 = solver_pass2.SearchForAllSolutions(model_pass2, collector)
+        
         elapsed_time = time.time() - start_time
         
         # Préparer les infos
         info = {
-            'status': solver.StatusName(status),
+            'status': solver_pass2.StatusName(status_pass2),
             'num_solutions': len(collector.get_solutions()),
             'elapsed_time': elapsed_time,
-            'num_branches': solver.NumBranches(),
-            'wall_time': solver.WallTime()
+            'num_branches': solver_pass1.NumBranches() + solver_pass2.NumBranches(),
+            'wall_time': solver_pass1.WallTime() + solver_pass2.WallTime(),
+            'optimal_score': optimal_score,
+            'pass': 2
         }
         
-        return collector.get_solutions(), solver.StatusName(status), info
+        if progress_callback:
+            progress_callback(len(collector.get_solutions()), len(collector.get_solutions()), elapsed_time)
+        
+        return collector.get_solutions(), solver_pass2.StatusName(status_pass2), info
     
     def _build_model(
         self,
@@ -197,6 +249,86 @@ class TournamentSolver:
         )
         
         model.Minimize(objective)
+        
+        return model, x, auxiliary_vars
+    
+    def _build_model_for_enumeration(
+        self,
+        participants: List[Participant],
+        tournaments: List[Tournament],
+        target_score: int
+    ) -> Tuple[cp_model.CpModel, Dict, Dict]:
+        """
+        Construit un modèle de SATISFACTION (sans objectif à minimiser)
+        pour énumérer toutes les solutions ayant le score target_score.
+        
+        Cette méthode est utilisée en PASS 2 après avoir trouvé le score optimal.
+        
+        Args:
+            participants: Liste des participants
+            tournaments: Liste des tournois
+            target_score: Score optimal trouvé en PASS 1
+            
+        Returns:
+            Tuple (model, variables, auxiliary_vars)
+        """
+        model = cp_model.CpModel()
+        
+        # === VARIABLES ===
+        # Variables principales: x[participant, tournament] = 1 si participe
+        x = {}
+        for participant in participants:
+            for tournament in tournaments:
+                x[(participant.nom, tournament.id)] = model.NewBoolVar(
+                    f"x_{participant.nom}_{tournament.id}"
+                )
+        
+        # Variables auxiliaires
+        auxiliary_vars = {}
+        
+        # === CONTRAINTES (MÊMES QUE PASS 1) ===
+        
+        # 1. Contrainte de couples
+        self._add_couple_constraints(model, x, participants, tournaments)
+        
+        # 2. Contrainte d'équipes
+        incomplete_penalties = self._add_team_constraints(
+            model, x, participants, tournaments, auxiliary_vars
+        )
+        
+        # 3. Contrainte de disponibilité
+        self._add_availability_constraints(model, x, participants, tournaments)
+        
+        # 4. Contrainte de vœux (ne jamais dépasser + strict si demandé)
+        self._add_wish_constraints(model, x, participants, tournaments)
+        
+        # 5. Calculer les jours joués
+        days_played = self._calculate_days_played(
+            model, x, participants, tournaments, auxiliary_vars
+        )
+        
+        # 6. Calculer les écarts aux vœux (pour contrainte de score)
+        wish_deviations = self._calculate_wish_deviations(
+            model, days_played, participants, auxiliary_vars
+        )
+        
+        # 7. Calculer les pénalités de fatigue
+        fatigue_penalties = self._calculate_fatigue_penalties(
+            model, x, participants, tournaments, auxiliary_vars
+        )
+        
+        # === CONTRAINTE DE SCORE OPTIMAL ===
+        # C'est la CLEF : on transforme l'objectif en CONTRAINTE
+        objective_value = (
+            sum(wish_deviations) * self.config.weight_wishes +
+            sum(fatigue_penalties) * self.config.weight_fatigue +
+            sum(incomplete_penalties) * self.config.weight_incomplete
+        )
+        
+        # CONTRAINTE: Le score doit être exactement égal au score optimal
+        model.Add(objective_value == target_score)
+        
+        # PAS de model.Minimize() ici ! C'est maintenant un problème de satisfaction.
         
         return model, x, auxiliary_vars
     

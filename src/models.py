@@ -3,7 +3,7 @@ Modèles de données pour l'organisateur d'Estivales
 """
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Set
-from src.constants import VALID_GENRES, VALID_TOURNAMENT_IDS
+from src.constants import VALID_GENRES, VALID_TOURNAMENT_IDS, MAX_CONSECUTIVE_DAYS
 
 
 @dataclass
@@ -16,7 +16,6 @@ class Participant:
     voeux_open: int
     dispo_jusqu_a: str
     respect_voeux: bool
-    respect_etapes_strict: bool = False  # NOUVEAU: Respect strict des étapes uniquement
     
     def __post_init__(self):
         """Validation après initialisation"""
@@ -59,8 +58,7 @@ class Participant:
             'Voeux_Etape': self.voeux_etape,
             'Voeux_Open': self.voeux_open,
             'Dispo_Jusqu_a': self.dispo_jusqu_a,
-            'Respect_Voeux': self.respect_voeux,
-            'Respect_Etapes_Strict': self.respect_etapes_strict
+            'Respect_Voeux': self.respect_voeux
         }
     
     @classmethod
@@ -73,8 +71,7 @@ class Participant:
             voeux_etape=int(data['Voeux_Etape']),
             voeux_open=int(data['Voeux_Open']),
             dispo_jusqu_a=data['Dispo_Jusqu_a'],
-            respect_voeux=bool(data['Respect_Voeux']),
-            respect_etapes_strict=bool(data.get('Respect_Etapes_Strict', False))
+            respect_voeux=bool(data['Respect_Voeux'])
         )
 
 
@@ -239,7 +236,7 @@ class Solution:
         fatigue_penalty = len(self.fatigue_participants) * 5
         
         # 4. Pénalité pour jours consécutifs excessifs
-        consecutive_penalty = max(0, self.max_consecutive_days - 3) * 3
+        consecutive_penalty = max(0, self.max_consecutive_days - MAX_CONSECUTIVE_DAYS) * 3
         
         # Score final (base 60 + bonus 40 - pénalités)
         score = 60 + wishes_score - ecart_penalty - fatigue_penalty - consecutive_penalty

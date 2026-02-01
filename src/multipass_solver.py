@@ -128,6 +128,9 @@ class MultiPassSolver:
         """
         Résout en relaxant les contraintes des participants sélectionnés
         
+        IMPORTANT: Filtre pour garder SEULEMENT les solutions où les personnes
+        en relax_names sont effectivement lésées
+        
         Args:
             participants: Liste des participants
             tournaments: Liste des tournois
@@ -156,14 +159,25 @@ class MultiPassSolver:
             progress_callback=None
         )
         
-        if solutions and len(solutions) > 0:
+        # FILTRER pour garder SEULEMENT celles où relax_names sont lésés
+        if solutions:
+            filtered_solutions = [
+                sol for sol in solutions
+                if any(name in sol.violated_wishes for name in relax_names)
+            ]
+            
+            # Si aucune solution ne lèse les personnes demandées, retourner toutes
+            # (cas où même relâché, ils sont tous satisfaits)
+            if not filtered_solutions:
+                filtered_solutions = solutions
+            
             return MultiPassResult(
-                solutions=solutions,
+                solutions=filtered_solutions,
                 pass_number=3,
                 relaxed_participants=relax_names,
                 candidates_if_failed=[],
                 status='success',
-                message=f"✅ {len(solutions)} solution(s) trouvée(s) en lésant: {', '.join(relax_names)}"
+                message=f"✅ {len(filtered_solutions)} solution(s) trouvée(s) en lésant: {', '.join(relax_names)}"
             )
         else:
             return MultiPassResult(
