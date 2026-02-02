@@ -349,7 +349,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Bouton reset
-    if st.button("🔄 Réinitialiser", type="secondary", use_container_width=True):
+    if st.button("🔄 Réinitialiser", type="secondary", width='stretch'):
         st.session_state.data = DEFAULT_PARTICIPANTS.copy()
         st.session_state.include_o3 = False
         st.session_state.allow_incomplete = False
@@ -360,7 +360,7 @@ with st.sidebar:
     # Tests automatiques
     st.markdown("---")
     st.subheader("🧪 Tests")
-    if st.button("▶️ Lancer Tests", use_container_width=True):
+    if st.button("▶️ Lancer Tests",  width='stretch'):
         with st.spinner("Exécution des tests..."):
             import subprocess
             result = subprocess.run(
@@ -396,7 +396,7 @@ with col_editor:
     # Éditeur de données
     edited_df = st.data_editor(
         df_participants,
-        use_container_width=True,
+         width='stretch',
         hide_index=True,
         num_rows="dynamic",
         column_config={
@@ -437,7 +437,7 @@ with col_actions:
     st.markdown("#### Actions Rapides")
     
     # Un seul bouton Reset qui recharge les données par défaut
-    if st.button("🔄 Réinitialiser", use_container_width=True, help="Recharger les données par défaut"):
+    if st.button("🔄 Réinitialiser",  width='stretch', help="Recharger les données par défaut"):
         st.session_state.data = DEFAULT_PARTICIPANTS.copy()
         st.session_state.include_o3 = False
         st.session_state.allow_incomplete = False
@@ -448,7 +448,7 @@ with col_actions:
         st.rerun()
     
     # Valider les données
-    if st.button("✅ Valider Données", use_container_width=True):
+    if st.button("✅ Valider Données",  width='stretch'):
         try:
             participants = [
                 Participant.from_dict(dict(zip(PARTICIPANT_COLUMNS, row)))
@@ -564,10 +564,27 @@ except Exception as e:
 st.markdown("---")
 st.header("3. Calcul des Variantes")
 
-if st.button("🚀 Calculer les Variantes", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les Variantes", type="primary",  width='stretch'):
+    # IMPORTANT: Recréer participants depuis session_state.data
+    # pour être SÛR d'utiliser les données à jour du tableau
+    try:
+        participants = [
+            Participant.from_dict(dict(zip(PARTICIPANT_COLUMNS, row)))
+            for row in st.session_state.data
+        ]
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la lecture des participants: {str(e)}")
+        participants = []
+    
     if not participants:
         st.error("❌ Veuillez configurer au moins un participant valide")
     else:
+        # DEBUG: Afficher les participants utilisés
+        with st.expander("🔍 Debug: Participants utilisés pour le calcul", expanded=False):
+            st.write(f"Nombre: {len(participants)}")
+            for p in participants:
+                st.write(f"- {p.nom} ({p.genre}): {p.voeux_etape}E + {p.voeux_open}O")
+        
         # Avertissement si calcul long
         if len(participants) > 15:
             st.warning(
@@ -754,7 +771,7 @@ if st.session_state.solutions:
         # Trier par jours si lésé DESCENDANT (ceux qui joueraient le plus en premier)
         df_candidates = pd.DataFrame(candidates_data).sort_values('Jours si lésé', ascending=False)
         
-        st.dataframe(df_candidates, use_container_width=True, hide_index=True)
+        st.dataframe(df_candidates,  width='stretch', hide_index=True)
         
         # Sélection
         selected_to_relax = st.multiselect(
@@ -822,7 +839,7 @@ if st.session_state.solutions:
             df_violated = pd.DataFrame(violated_stats)
             st.dataframe(
                 df_violated,
-                use_container_width=True,
+                 width='stretch',
                 hide_index=True,
                 height=min(300, 35 * (len(df_violated) + 1))
             )
@@ -834,10 +851,10 @@ if st.session_state.solutions:
             st.success("🎉 Toutes les solutions respectent tous les vœux !")
         filtered = solutions
     
-    # Trier par max_consecutive_days puis qualité
+    # Trier par qualité (qui inclut déjà la fatigue dans son calcul)
     filtered = sorted(
         filtered,
-        key=lambda s: (s.max_consecutive_days, -s.get_quality_score())
+        key=lambda s: -s.get_quality_score()  # Décroissant (meilleur d'abord)
     )
     
     # Navigation par niveaux de compromis
@@ -1030,11 +1047,11 @@ if st.session_state.solutions:
         
         with col_comp1:
             fig_comparison = create_quality_comparison_chart(filtered[:10])
-            st.plotly_chart(fig_comparison, use_container_width=True, key="comp_chart")
+            st.plotly_chart(fig_comparison,  width='stretch', key="comp_chart")
         
         with col_comp2:
             fig_overview = create_statistics_overview(filtered)
-            st.plotly_chart(fig_overview, use_container_width=True, key="overview_chart")
+            st.plotly_chart(fig_overview,  width='stretch', key="overview_chart")
     else:
         st.info("Une seule variante disponible - voir détails ci-dessous")
     
@@ -1050,7 +1067,7 @@ if st.session_state.solutions:
             st.warning(
                 f"⚠️ {len(filtered)} solutions correspondent aux critères. "
                 f"Seules les {MAX_SOLUTIONS_TO_DISPLAY} meilleures sont affichées "
-                f"(triées par fatigue puis qualité)."
+                f"(triées par score de qualité décroissant)."
             )
         
         # Créer les tabs
@@ -1094,7 +1111,8 @@ if st.session_state.solutions:
                 with col_head3:
                     st.metric(
                         "Score Qualité",
-                        f"{solution.get_quality_score():.0f}/100"
+                        f"{solution.get_quality_score():.0f}/100",
+                        help="Score calculé: 60pts vœux respectés - 10pts/j lésé - 5pts/personne fatiguée - 3pts/j consécutif>4"
                     )
                 
                 # Graphiques de détail de cette variante
@@ -1104,11 +1122,11 @@ if st.session_state.solutions:
                 
                 with col_ana1:
                     fig_workload = create_workload_distribution_chart(solution)
-                    st.plotly_chart(fig_workload, use_container_width=True, key=f"workload_{i}")
+                    st.plotly_chart(fig_workload,  width='stretch', key=f"workload_{i}")
                 
                 with col_ana2:
                     fig_consecutive = create_consecutive_days_chart(solution)
-                    st.plotly_chart(fig_consecutive, use_container_width=True, key=f"consecutive_{i}")
+                    st.plotly_chart(fig_consecutive,  width='stretch', key=f"consecutive_{i}")
                 
                 # Planning par lieu
                 st.markdown("### 📍 Planning par Lieu")
@@ -1180,7 +1198,9 @@ if st.session_state.solutions:
                 recap_data = []
                 total_days = 0
                 
-                for participant in participants:
+                # IMPORTANT: Utiliser solution.participants pour avoir les données
+                # qui ont été utilisées lors du calcul, pas celles du tableau actuel
+                for participant in solution.participants:
                     stats = solution.get_participant_stats(participant.nom)
                     
                     recap_data.append({
@@ -1221,7 +1241,7 @@ if st.session_state.solutions:
                 
                 st.dataframe(
                     styled_df,
-                    use_container_width=True,
+                     width='stretch',
                     hide_index=True,
                     height=35 * (len(df_recap) + 1),
                     column_config={
