@@ -10,6 +10,30 @@ Application web pour optimiser la composition des équipes de beach-volley lors 
 - **Gestion des couples** et disponibilités
 - **Export CSV** des plannings
 
+## 📚 Documentation
+
+### Spécifications Complètes
+
+Pour une compréhension approfondie du projet, consultez les spécifications détaillées dans `/docs` :
+
+- **[SPEC_FONCTIONNELLE.md](docs/SPEC_FONCTIONNELLE.md)** :
+  - 📋 Vue d'ensemble et objectifs
+  - 👥 Personas et cas d'usage  
+  - 🎯 Exigences fonctionnelles détaillées
+  - 🎨 Interface utilisateur et parcours
+  - 📊 Métriques et KPI
+  - 🔍 Gestion des erreurs
+
+- **[SPEC_TECHNIQUE.md](docs/SPEC_TECHNIQUE.md)** :
+  - 🏗️ Architecture système
+  - 💻 Modèles de données
+  - ⚙️ Algorithmes OR-Tools (détails d'implémentation)
+  - 🧪 Tests et qualité
+  - 🚀 Performance et optimisation
+  - 📈 Points d'amélioration futurs
+
+**Version actuelle** : 2.2.3 (3 Février 2026)
+
 ## 🚀 Démarrage Rapide
 
 ### Installation
@@ -53,6 +77,9 @@ py -m pytest tests/ -v
 │   ├── multipass_solver.py  # Assistant intelligent
 │   ├── visualizations.py    # Graphiques Plotly
 │   └── validation.py   # Validation des données
+├── docs/               # 📚 Spécifications complètes
+│   ├── SPEC_FONCTIONNELLE.md
+│   └── SPEC_TECHNIQUE.md
 └── tests/              # Tests automatiques
 ```
 

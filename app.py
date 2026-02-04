@@ -49,7 +49,7 @@ st.set_page_config(
     page_title="Organisateur d'Estivales de Volley",
     page_icon="🏐",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"  # Fermée par défaut
 )
 
 # CSS personnalisé
@@ -507,7 +507,7 @@ with col_param3:
         "🔢 Solutions à chercher",
         min_value=10,
         max_value=500,
-        value=50,
+        value=500,  # Par défaut à 500
         step=10,
         help="""Nombre maximum de solutions différentes à générer.
         
@@ -1090,6 +1090,36 @@ if st.session_state.solutions or ('candidates' in st.session_state and st.sessio
     # Afficher les profils uniques
     st.info(f"🔍 {len(profils_dict)} profil(s) unique(s) de lésions parmi {len(filtered)} solutions")
     
+    # BONUS: Checkbox pour limiter à 1 solution par profil
+    col_profil1, col_profil2 = st.columns([2, 3])
+    
+    with col_profil1:
+        limit_to_best_per_profile = st.checkbox(
+            "🎯 1 seule variante par profil (la meilleure)",
+            value=False,
+            help="Garde uniquement la solution avec le meilleur score pour chaque profil unique"
+        )
+    
+    with col_profil2:
+        if limit_to_best_per_profile:
+            st.caption("✅ Mode actif : 1 solution max par profil")
+        else:
+            st.caption("ℹ️ Mode désactivé : toutes les variantes affichées")
+    
+    # Appliquer la limitation si activée
+    if limit_to_best_per_profile:
+        # Ne garder que la meilleure solution de chaque profil
+        best_per_profile = []
+        for signature, solutions in profils_dict.items():
+            # Trier par score et prendre la meilleure
+            best_solution = max(solutions, key=lambda s: s.get_quality_score())
+            best_per_profile.append(best_solution)
+        
+        # Remplacer filtered par les meilleures
+        filtered = sorted(best_per_profile, key=lambda s: -s.get_quality_score())
+        
+        st.success(f"✅ {len(filtered)} solution(s) affichée(s) (1 par profil)")
+    
     # Sélecteur de profil pour filtrer
     profil_labels = []
     profil_signatures = []
@@ -1102,11 +1132,12 @@ if st.session_state.solutions or ('candidates' in st.session_state and st.sessio
     selected_profil_index = st.selectbox(
         "🎯 Filtrer par profil (optionnel):",
         options=["Tous les profils"] + profil_labels,
-        help="Sélectionnez un profil pour afficher uniquement ses variantes"
+        help="Sélectionnez un profil pour afficher uniquement ses variantes",
+        disabled=limit_to_best_per_profile  # Désactivé si 1 par profil activé
     )
     
-    # Appliquer le filtre de profil si sélectionné
-    if selected_profil_index != "Tous les profils":
+    # Appliquer le filtre de profil si sélectionné (et pas en mode 1 par profil)
+    if selected_profil_index != "Tous les profils" and not limit_to_best_per_profile:
         # Extraire l'index du profil
         profil_idx = profil_labels.index(selected_profil_index)
         selected_signature = profil_signatures[profil_idx]
@@ -1128,8 +1159,8 @@ if st.session_state.solutions or ('candidates' in st.session_state and st.sessio
             # Nombre de variantes pour ce profil
             nb_variantes = len(solutions)
             
-            # Score moyen
-            score_moyen = sum(s.get_quality_score() for s in solutions) / nb_variantes
+            # Score max
+            score_max = max(s.get_quality_score() for s in solutions)
             
             # Total jours lésés
             total_lese = sum(jours for _, jours in signature)
@@ -1143,7 +1174,7 @@ if st.session_state.solutions or ('candidates' in st.session_state and st.sessio
             with col3:
                 st.metric("Total lésé", f"{total_lese}j")
             with col4:
-                st.metric("Score moyen", f"{score_moyen:.0f}/100")
+                st.metric("Score max", f"{score_max:.0f}/100")
     
     # Comparatif des 10 meilleures variantes
     st.markdown("---")
