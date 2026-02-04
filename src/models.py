@@ -209,20 +209,21 @@ class Solution:
         """
         Calcule un score de qualité de la solution (0-100)
         
-        FORMULE AMÉLIORÉE:
-        1. Vœux respectés (60 points base)
-        2. Gravité des écarts (-10 points par jour total lésé)
-        3. Fatigue (-5 points par personne fatiguée)
-        4. Jours consécutifs excessifs (-3 points par jour au-delà de 3)
+        FORMULE OPTIMISÉE (v2.2.3):
+        Objectif: Tous jouent le plus possible, lésions réparties, favoriser gros demandeurs
+        
+        Score = 100 - pénalité_jours_lésés - pénalité_concentration - pénalité_distribution - pénalité_fatigue
+        
+        1. Pénalité jours lésés (critère principal): -2.5 points par jour lésé total
+        2. Pénalité concentration: -5 points par jour au-delà de 1j pour une même personne
+        3. Pénalité distribution (critère tertiaire): ratio selon demandes
+        4. Pénalité fatigue: -2 points par personne fatiguée
         """
         if not self.participants:
             return 0.0
         
-        # 1. Base: vœux respectés (60 points)
-        nb_respected = len(self.participants) - len(self.violated_wishes)
-        wishes_score = (nb_respected / len(self.participants)) * 60
-        
-        # 2. Pénalité pour GRAVITÉ des écarts (pas juste nombre de lésés)
+        # 1. CRITÈRE PRINCIPAL: Total jours lésés
+        # Pénalité de -2.5 points par jour manquant (ajusté de 3 → 2.5)
         total_jours_leses = 0
         for participant in self.participants:
             stats = self.get_participant_stats(participant.nom)
@@ -230,16 +231,52 @@ class Solution:
             if ecart < 0:  # Seulement écarts négatifs (lésés)
                 total_jours_leses += abs(ecart)
         
-        ecart_penalty = total_jours_leses * 10  # -10 points par jour manquant
+        penalite_jours = total_jours_leses * 2.5
         
-        # 3. Pénalité pour fatigue
-        fatigue_penalty = len(self.fatigue_participants) * 5
+        # 2. NOUVEAU: Pénalité pour CONCENTRATION des lésions
+        # On pénalise fortement les grosses lésions individuelles (>1j)
+        # Favorise 4 personnes de 1j plutôt que 1 personne de 4j
+        penalite_concentration = 0.0
+        max_lesion_individuelle = 0
         
-        # 4. Pénalité pour jours consécutifs excessifs
-        consecutive_penalty = max(0, self.max_consecutive_days - MAX_CONSECUTIVE_DAYS) * 3
+        for participant in self.participants:
+            stats = self.get_participant_stats(participant.nom)
+            ecart = stats['ecart']
+            
+            if ecart < 0:  # Participant lésé
+                jours_manquants = abs(ecart)
+                max_lesion_individuelle = max(max_lesion_individuelle, jours_manquants)
+                
+                # Pénalité progressive: 0 pour 1j, +5 pour chaque jour supplémentaire
+                if jours_manquants > 1:
+                    penalite_concentration += (jours_manquants - 1) * 5
         
-        # Score final (base 60 + bonus 40 - pénalités)
-        score = 60 + wishes_score - ecart_penalty - fatigue_penalty - consecutive_penalty
+        # 3. CRITÈRE TERTIAIRE: Distribution (qui est lésé)
+        # À égalité de jours et de répartition, favoriser léser les gros demandeurs
+        cout_distribution = 0.0
+        
+        for participant in self.participants:
+            stats = self.get_participant_stats(participant.nom)
+            ecart = stats['ecart']
+            
+            if ecart < 0:  # Participant lésé
+                jours_demandes = stats['jours_souhaites']
+                jours_manquants = abs(ecart)
+                
+                if jours_demandes > 0:
+                    ratio_lesion = jours_manquants / jours_demandes
+                    cout_distribution += ratio_lesion * 8  # Poids réduit (15 → 8)
+        
+        # 4. Pénalités secondaires (inchangées)
+        penalite_fatigue = len(self.fatigue_participants) * 2
+        penalite_consecutifs = max(0, self.max_consecutive_days - MAX_CONSECUTIVE_DAYS) * 1
+        
+        # SCORE FINAL
+        score = 100 - penalite_jours - penalite_concentration - cout_distribution - penalite_fatigue - penalite_consecutifs
+        
+        # Bonus pour solution parfaite
+        if total_jours_leses == 0:
+            score = 100.0
         
         return max(0.0, min(100.0, score))
 

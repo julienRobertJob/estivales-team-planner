@@ -108,48 +108,118 @@ class MultiPassSolver:
                         else f"⚠️ {len(solutions)} solutions trouvées mais avec des vœux non respectés"
             )
         
-        # Proposer les candidats
+        # === PASS 3: Tester automatiquement les candidats ===
+        if progress_callback:
+            progress_callback("pass3", f"Test automatique avec {len(candidates)} candidat(s)...")
+        
+        # Essayer avec chaque candidat individuellement
+        all_solutions = []
+        tested_candidates = []
+        
+        for candidate in candidates:
+            # Tester en lésant ce candidat (passer le candidat complet)
+            result = self.solve_with_relaxation(
+                participants,
+                tournaments,
+                [candidate],  # Passer le RelaxationCandidate complet
+                progress_callback
+            )
+            
+            if result.solutions:
+                all_solutions.extend(result.solutions)
+                tested_candidates.append(candidate.participant_name)
+                # Ne pas tester tous si on a déjà assez de solutions
+                if len(all_solutions) >= self.config.max_solutions:
+                    break
+        
+        if all_solutions:
+            # Dédupliquer les solutions (au cas où)
+            unique_solutions = []
+            seen_assignments = set()
+            for sol in all_solutions:
+                sol_key = str(sorted([(k, tuple(v.get('F', [])), tuple(v.get('M', []))) 
+                                     for k, v in sol.assignments.items()]))
+                if sol_key not in seen_assignments:
+                    seen_assignments.add(sol_key)
+                    unique_solutions.append(sol)
+            
+            return MultiPassResult(
+                solutions=unique_solutions[:self.config.max_solutions],
+                pass_number=3,
+                relaxed_participants=tested_candidates,
+                candidates_if_failed=candidates,  # TOUJOURS garder les candidats pour choix manuel
+                status='success',
+                message=f"✅ {len(unique_solutions)} solution(s) trouvée(s) en testant automatiquement les candidats"
+            )
+        
+        # Si aucune solution trouvée même en testant automatiquement
         return MultiPassResult(
             solutions=solutions if solutions else [],
-            pass_number=2,
+            pass_number=3,
             relaxed_participants=[],
             candidates_if_failed=candidates,
             status='need_user_choice',
-            message=f"💡 {len(candidates)} participant(s) peuvent être lésés pour débloquer la situation"
+            message=f"💡 Aucune solution automatique - {len(candidates)} participant(s) peuvent être lésés manuellement"
         )
     
     def solve_with_relaxation(
         self,
         participants: List[Participant],
         tournaments: List[Tournament],
-        relax_names: List[str],
+        relax_candidates: List,  # List[RelaxationCandidate] ou List[str] pour rétrocompat
         progress_callback=None
     ) -> MultiPassResult:
         """
         Résout en relaxant les contraintes des participants sélectionnés
         
         IMPORTANT: Filtre pour garder SEULEMENT les solutions où les personnes
-        en relax_names sont effectivement lésées
+        sont effectivement lésées
         
         Args:
             participants: Liste des participants
             tournaments: Liste des tournois
-            relax_names: Noms des participants à léser
+            relax_candidates: Liste de RelaxationCandidate OU noms (str) pour compatibilité
             progress_callback: Callback pour progression
             
         Returns:
             MultiPassResult avec solutions
         """
+        # Support des deux formats: RelaxationCandidate ou str (rétrocompatibilité)
+        if relax_candidates and isinstance(relax_candidates[0], str):
+            # Ancien format: liste de noms
+            relax_names = relax_candidates
+            relax_dict = {name: None for name in relax_names}  # Pas d'info sur comment léser
+        else:
+            # Nouveau format: liste de RelaxationCandidate
+            relax_names = [c.participant_name for c in relax_candidates]
+            relax_dict = {c.participant_name: c for c in relax_candidates}
+        
         if progress_callback:
             progress_callback("pass3", f"Calcul avec {len(relax_names)} relaxation(s)...")
+        
+        # Sauvegarder les vœux originaux pour calculer les vraies violations
+        original_wishes = {p.nom: (p.voeux_etape, p.voeux_open) for p in participants}
         
         # Créer une copie modifiée
         modified_participants = []
         for p in participants:
             p_copy = copy.copy(p)
             if p.nom in relax_names:
-                # Relâcher la contrainte stricte
-                p_copy.respect_voeux = False
+                candidate = relax_dict.get(p.nom)
+                
+                if candidate:
+                    # Utiliser les vœux proposés du candidat (sait si open ou étape)
+                    p_copy.voeux_etape = candidate.proposed_wishes_etape
+                    p_copy.voeux_open = candidate.proposed_wishes_open
+                else:
+                    # Ancien comportement: réduire étape en priorité
+                    if p_copy.voeux_etape > 0:
+                        p_copy.voeux_etape -= 1
+                    elif p_copy.voeux_open > 0:
+                        p_copy.voeux_open -= 1
+                
+                # IMPORTANT: Activer respect_voeux pour FORCER ces nouveaux vœux
+                p_copy.respect_voeux = True
             modified_participants.append(p_copy)
         
         # Résoudre avec relaxation
@@ -159,15 +229,34 @@ class MultiPassSolver:
             progress_callback=None
         )
         
-        # FILTRER pour garder SEULEMENT celles où relax_names sont lésés
+        # RECALCULER TOUTES les stats avec les participants ORIGINAUX
         if solutions:
-            filtered_solutions = [
-                sol for sol in solutions
-                if any(name in sol.violated_wishes for name in relax_names)
-            ]
+            for sol in solutions:
+                # Remplacer les participants par les originaux
+                sol.participants = participants
+                # Recalculer TOUTES les stats avec les vœux originaux
+                sol.calculate_stats()
             
-            # Si aucune solution ne lèse les personnes demandées, retourner toutes
-            # (cas où même relâché, ils sont tous satisfaits)
+            # Filtrer pour garder seulement celles où au moins un relax_name est lésé
+            filtered_solutions = []
+            for sol in solutions:
+                # Vérifier si au moins une personne de relax_names est vraiment lésée
+                is_valid = False
+                for name in relax_names:
+                    if name in sol.violated_wishes:
+                        # Vérifier que c'est bien un déficit (pas un surplus)
+                        stats = sol.get_participant_stats(name)
+                        participant = next((p for p in participants if p.nom == name), None)
+                        if participant:
+                            deficit = participant.voeux_jours_total - stats['jours_joues']
+                            if deficit > 0:  # Vraiment lésé
+                                is_valid = True
+                                break
+                
+                if is_valid:
+                    filtered_solutions.append(sol)
+            
+            # Si aucune n'est vraiment lésée après recalcul, garder toutes quand même
             if not filtered_solutions:
                 filtered_solutions = solutions
             
@@ -197,62 +286,86 @@ class MultiPassSolver:
         """
         Identifie les participants qu'on peut léser pour débloquer
         
-        Stratégie:
-        1. Tester en réduisant 1 vœu à chaque participant non protégé
-        2. Voir si ça débloque la situation
-        3. Retourner les candidats
+        Stratégie AMÉLIORÉE:
+        1. Pour chaque participant NON PROTÉGÉ (respect_voeux=False)
+        2. Tester DEUX possibilités:
+           a) Réduire 1 OPEN (impact: 1 jour) - PRIORITÉ
+           b) Réduire 1 ÉTAPE (impact: 2 jours) - SECONDAIRE
+        3. Trier par impact croissant (moins de jours lésés en premier)
+        4. Retourner les candidats
+        
+        IMPORTANT: On ne teste JAMAIS les participants avec respect_voeux=True.
+        Leurs vœux doivent être respectés strictement.
         """
         candidates = []
         
-        # Participants non protégés avec des vœux
-        non_protected = [
+        # UNIQUEMENT les participants avec respect_voeux=False (non protégés)
+        candidates_to_test = [
             p for p in participants
             if not p.respect_voeux and (p.voeux_etape > 0 or p.voeux_open > 0)
         ]
         
-        for candidate in non_protected:
-            # Créer une version modifiée
-            modified_participants = []
-            for p in participants:
-                p_copy = copy.copy(p)
-                if p.nom == candidate.nom:
-                    # Réduire les vœux de 1
-                    if p_copy.voeux_etape > 0:
-                        p_copy.voeux_etape -= 1
-                    elif p_copy.voeux_open > 0:
-                        p_copy.voeux_open -= 1
-                modified_participants.append(p_copy)
-            
-            # Tester rapidement (timeout court)
-            test_config = copy.copy(self.config)
-            test_config.max_solutions = 1  # Juste vérifier si possible
-            test_config.timeout_seconds = 5.0  # Court
-            
-            test_solver = TournamentSolver(test_config)
-            solutions, status, info = test_solver.solve(modified_participants, tournaments)
-            
-            if solutions and len(solutions) > 0:
-                # Calculer l'impact
-                solution = solutions[0]
-                stats = solution.get_participant_stats(candidate.nom)
+        # Pour chaque candidat, tester les DEUX possibilités
+        for candidate in candidates_to_test:
+            # Option 1: Réduire 1 OPEN (si possible) - IMPACT: 1 jour
+            if candidate.voeux_open > 0:
+                modified_participants = []
+                for p in participants:
+                    p_copy = copy.copy(p)
+                    if p.nom == candidate.nom:
+                        p_copy.voeux_open -= 1  # Réduire 1 open
+                    modified_participants.append(p_copy)
                 
-                proposed_etape = candidate.voeux_etape - 1 if candidate.voeux_etape > 0 else candidate.voeux_etape
-                proposed_open = candidate.voeux_open - 1 if candidate.voeux_open > 0 else candidate.voeux_open
+                # Tester rapidement
+                test_config = copy.copy(self.config)
+                test_config.max_solutions = 1
+                test_config.timeout_seconds = 5.0
                 
-                reason = "Réduire 1 étape" if candidate.voeux_etape > 0 else "Réduire 1 open"
+                test_solver = TournamentSolver(test_config)
+                solutions, status, info = test_solver.solve(modified_participants, tournaments)
                 
-                candidates.append(RelaxationCandidate(
-                    participant_name=candidate.nom,
-                    current_wishes_etape=candidate.voeux_etape,
-                    current_wishes_open=candidate.voeux_open,
-                    proposed_wishes_etape=proposed_etape,
-                    proposed_wishes_open=proposed_open,
-                    impact_days_if_relaxed=stats['jours_joues'],
-                    reason=reason
-                ))
+                if solutions and len(solutions) > 0:
+                    candidates.append(RelaxationCandidate(
+                        participant_name=candidate.nom,
+                        current_wishes_etape=candidate.voeux_etape,
+                        current_wishes_open=candidate.voeux_open,
+                        proposed_wishes_etape=candidate.voeux_etape,
+                        proposed_wishes_open=candidate.voeux_open - 1,
+                        impact_days_if_relaxed=1,  # 1 jour lésé
+                        reason=f"Réduire 1 open ({candidate.voeux_open}→{candidate.voeux_open-1})"
+                    ))
+            
+            # Option 2: Réduire 1 ÉTAPE (si possible) - IMPACT: 2 jours
+            if candidate.voeux_etape > 0:
+                modified_participants = []
+                for p in participants:
+                    p_copy = copy.copy(p)
+                    if p.nom == candidate.nom:
+                        p_copy.voeux_etape -= 1  # Réduire 1 étape
+                    modified_participants.append(p_copy)
+                
+                # Tester rapidement
+                test_config = copy.copy(self.config)
+                test_config.max_solutions = 1
+                test_config.timeout_seconds = 5.0
+                
+                test_solver = TournamentSolver(test_config)
+                solutions, status, info = test_solver.solve(modified_participants, tournaments)
+                
+                if solutions and len(solutions) > 0:
+                    candidates.append(RelaxationCandidate(
+                        participant_name=candidate.nom,
+                        current_wishes_etape=candidate.voeux_etape,
+                        current_wishes_open=candidate.voeux_open,
+                        proposed_wishes_etape=candidate.voeux_etape - 1,
+                        proposed_wishes_open=candidate.voeux_open,
+                        impact_days_if_relaxed=2,  # 2 jours lésés
+                        reason=f"Réduire 1 étape ({candidate.voeux_etape}→{candidate.voeux_etape-1})"
+                    ))
         
-        # Trier par impact (privilégier ceux qui joueraient le moins si lésés)
-        candidates.sort(key=lambda c: c.impact_days_if_relaxed)
+        # TRIER par impact CROISSANT (opens en premier, étapes ensuite)
+        # Puis par nom pour déterminisme
+        candidates.sort(key=lambda c: (c.impact_days_if_relaxed, c.participant_name))
         
         return candidates
 
@@ -334,17 +447,53 @@ class ConflictAnalyzer:
                             f"Réduire les vœux de {p.nom} ou {partner.nom}"
                         )
         
-        # 4. Vérifier si équipes incomplètes est activé
+        # 4. Vérifier si équipes incomplètes et multiples de 3 par genre
         if not config.allow_incomplete:
-            nb_participants = len(participants)
-            if nb_participants % 3 != 0:
-                diagnostics['issues'].append(
-                    f"Nombre de participants ({nb_participants}) n'est pas multiple de 3"
-                )
-                diagnostics['suggestions'].append(
-                    "Activer 'Autoriser équipes incomplètes'"
-                )
-                diagnostics['severity'] = 'medium' if diagnostics['severity'] == 'unknown' else diagnostics['severity']
+            # Analyser par étape et par genre
+            etapes = [t for t in tournaments if t.is_etape]
+            
+            for genre in ['M', 'F']:
+                participants_genre = [p for p in participants if p.genre == genre]
+                # Compter combien ont des vœux étape >= 1 (veulent jouer des étapes)
+                nb_wants_etape = sum(1 for p in participants_genre if p.voeux_etape >= 1)
+                
+                if nb_wants_etape > 0 and nb_wants_etape % 3 != 0:
+                    diagnostics['issues'].append(
+                        f"🚫 BLOCAGE CRITIQUE: {nb_wants_etape} {genre} veulent jouer des étapes, "
+                        f"mais {nb_wants_etape} n'est pas un multiple de 3"
+                    )
+                    diagnostics['suggestions'].append(
+                        f"✅ Solution 1 (RECOMMANDÉE): Activer 'Autoriser équipes incomplètes'"
+                    )
+                    
+                    # Calculer le nombre optimal
+                    lower_multiple = (nb_wants_etape // 3) * 3
+                    upper_multiple = ((nb_wants_etape // 3) + 1) * 3
+                    
+                    diagnostics['suggestions'].append(
+                        f"✅ Solution 2: Ajuster à {lower_multiple} ou {upper_multiple} {genre} "
+                        f"({abs(nb_wants_etape - lower_multiple)} ou {abs(upper_multiple - nb_wants_etape)} personnes à modifier)"
+                    )
+                    
+                    if lower_multiple > 0:
+                        nb_to_remove = nb_wants_etape - lower_multiple
+                        diagnostics['suggestions'].append(
+                            f"✅ Solution 3: {nb_to_remove} {genre} ne jouent AUCUNE étape (mettre vœux_etape = 0)"
+                        )
+                    
+                    diagnostics['severity'] = 'critical'
+            
+            # Vérifier aussi globalement si pas encore de problème détecté
+            if diagnostics['severity'] == 'unknown':
+                nb_participants = len(participants)
+                if nb_participants % 3 != 0:
+                    diagnostics['issues'].append(
+                        f"Nombre total de participants ({nb_participants}) n'est pas multiple de 3"
+                    )
+                    diagnostics['suggestions'].append(
+                        "Activer 'Autoriser équipes incomplètes'"
+                    )
+                    diagnostics['severity'] = 'high'
         
         return diagnostics
 

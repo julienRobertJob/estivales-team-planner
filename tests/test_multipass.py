@@ -96,7 +96,7 @@ class TestMultiPassSolver:
         result = multipass.solve_with_relaxation(
             participants,
             tournaments,
-            relax_names=["Charlie"]
+            ["Charlie"]  # Passer directement (support str pour rétrocompatibilité)
         )
         
         # Devrait trouver des solutions

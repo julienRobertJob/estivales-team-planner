@@ -349,7 +349,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Bouton reset
-    if st.button("🔄 Réinitialiser", type="secondary", width='stretch'):
+    if st.button("🔄 Réinitialiser", type="secondary", width="stretch"):
         st.session_state.data = DEFAULT_PARTICIPANTS.copy()
         st.session_state.include_o3 = False
         st.session_state.allow_incomplete = False
@@ -360,7 +360,7 @@ with st.sidebar:
     # Tests automatiques
     st.markdown("---")
     st.subheader("🧪 Tests")
-    if st.button("▶️ Lancer Tests",  width='stretch'):
+    if st.button("▶️ Lancer Tests", width="stretch"):
         with st.spinner("Exécution des tests..."):
             import subprocess
             result = subprocess.run(
@@ -396,7 +396,7 @@ with col_editor:
     # Éditeur de données
     edited_df = st.data_editor(
         df_participants,
-         width='stretch',
+        width="stretch",
         hide_index=True,
         num_rows="dynamic",
         column_config={
@@ -437,7 +437,7 @@ with col_actions:
     st.markdown("#### Actions Rapides")
     
     # Un seul bouton Reset qui recharge les données par défaut
-    if st.button("🔄 Réinitialiser",  width='stretch', help="Recharger les données par défaut"):
+    if st.button("🔄 Réinitialiser", width="stretch", help="Recharger les données par défaut"):
         st.session_state.data = DEFAULT_PARTICIPANTS.copy()
         st.session_state.include_o3 = False
         st.session_state.allow_incomplete = False
@@ -448,7 +448,7 @@ with col_actions:
         st.rerun()
     
     # Valider les données
-    if st.button("✅ Valider Données",  width='stretch'):
+    if st.button("✅ Valider Données", width="stretch"):
         try:
             participants = [
                 Participant.from_dict(dict(zip(PARTICIPANT_COLUMNS, row)))
@@ -506,14 +506,15 @@ with col_param3:
     max_solutions = st.slider(
         "🔢 Solutions à chercher",
         min_value=10,
-        max_value=100,
+        max_value=500,
         value=50,
         step=10,
         help="""Nombre maximum de solutions différentes à générer.
         
         - Plus de solutions = plus de choix mais calcul plus long
         - L'algorithme s'arrête dès qu'il en trouve assez
-        - Avec 50-100, vous ne ratez aucune solution intéressante
+        - Recommandé: 50-100 (rapide et suffisant)
+        - Maximum: 500 (calcul long, pour cas complexes)
         - Seules les 10 meilleures seront affichées"""
     )
     
@@ -564,7 +565,7 @@ except Exception as e:
 st.markdown("---")
 st.header("3. Calcul des Variantes")
 
-if st.button("🚀 Calculer les Variantes", type="primary",  width='stretch'):
+if st.button("🚀 Calculer les Variantes", type="primary", width="stretch"):
     # IMPORTANT: Recréer participants depuis session_state.data
     # pour être SÛR d'utiliser les données à jour du tableau
     try:
@@ -572,123 +573,135 @@ if st.button("🚀 Calculer les Variantes", type="primary",  width='stretch'):
             Participant.from_dict(dict(zip(PARTICIPANT_COLUMNS, row)))
             for row in st.session_state.data
         ]
+        
+        # Vérifier qu'on a bien des participants
+        if not participants:
+            st.error("❌ Aucun participant trouvé dans le tableau")
+            st.stop()
+            
     except Exception as e:
+        import traceback
         st.error(f"❌ Erreur lors de la lecture des participants: {str(e)}")
-        participants = []
+        st.code(traceback.format_exc())
+        st.stop()
     
-    if not participants:
-        st.error("❌ Veuillez configurer au moins un participant valide")
-    else:
-        # DEBUG: Afficher les participants utilisés
-        with st.expander("🔍 Debug: Participants utilisés pour le calcul", expanded=False):
-            st.write(f"Nombre: {len(participants)}")
-            for p in participants:
-                st.write(f"- {p.nom} ({p.genre}): {p.voeux_etape}E + {p.voeux_open}O")
-        
-        # Avertissement si calcul long
-        if len(participants) > 15:
-            st.warning(
-                "⏱️ Avec plus de 15 participants, le calcul peut prendre 30-60 secondes. "
-                "Patience !"
-            )
-        
-        # Préparer les données
-        active_tournaments = [
-            Tournament(**t) for t in TOURNAMENTS
-            if st.session_state.include_o3 or t['id'] != 'O3'
-        ]
-        
-        config = SolverConfig(
-            include_o3=st.session_state.include_o3,
-            allow_incomplete=st.session_state.allow_incomplete,
-            max_solutions=max_solutions,
-            timeout_seconds=60.0  # Réduit pour Streamlit Cloud (timeout 90s)
+    # DEBUG: Afficher les participants utilisés
+    with st.expander("🔍 Debug: Participants utilisés pour le calcul", expanded=False):
+        st.write(f"Nombre: {len(participants)}")
+        for p in participants:
+            st.write(f"- {p.nom} ({p.genre}): {p.voeux_etape}E + {p.voeux_open}O")
+    
+    # Avertissement si calcul long
+    if len(participants) > 15:
+        st.warning(
+            "⏱️ Avec plus de 15 participants, le calcul peut prendre 30-60 secondes. "
+            "Patience !"
         )
+    
+    # Préparer les données
+    active_tournaments = [
+        Tournament(**t) for t in TOURNAMENTS
+        if st.session_state.include_o3 or t['id'] != 'O3'
+    ]
+    
+    config = SolverConfig(
+        include_o3=st.session_state.include_o3,
+        allow_incomplete=st.session_state.allow_incomplete,
+        max_solutions=max_solutions,
+        timeout_seconds=60.0  # Réduit pour Streamlit Cloud (timeout 90s)
+    )
+    
+    # Zone de progression
+    progress_container = st.empty()
+    status_text = st.empty()
+    
+    # Utiliser le MultiPassSolver
+    multipass = MultiPassSolver(config)
+    
+    # Callback de progression
+    def progress_callback(phase, message):
+        if phase == "pass1":
+            status_text.info(f"🔍 **Pass 1**: {message}")
+        elif phase == "pass2":
+            status_text.warning(f"🔍 **Pass 2**: {message}")
+        elif phase == "pass3":
+            status_text.info(f"🔄 **Pass 3**: {message}")
+    
+    # Lancer la résolution multi-passes
+    status_text.text("🔨 Construction du modèle...")
+    
+    result = multipass.solve_multipass(
+        participants,
+        active_tournaments,
+        progress_callback=progress_callback
+    )
+    
+    status_text.empty()
+    
+    # Traiter le résultat
+    if result.status == 'success':
+        st.success(result.message)
         
-        # Zone de progression
-        progress_container = st.empty()
-        status_text = st.empty()
+        # Sauvegarder les solutions
+        st.session_state.solutions = result.solutions
+        st.session_state.solver_info = {'pass': result.pass_number}
         
-        # Utiliser le MultiPassSolver
-        multipass = MultiPassSolver(config)
-        
-        # Callback de progression
-        def progress_callback(phase, message):
-            if phase == "pass1":
-                status_text.info(f"🔍 **Pass 1**: {message}")
-            elif phase == "pass2":
-                status_text.warning(f"🔍 **Pass 2**: {message}")
-            elif phase == "pass3":
-                status_text.info(f"🔄 **Pass 3**: {message}")
-        
-        # Lancer la résolution multi-passes
-        status_text.text("🔨 Construction du modèle...")
-        
-        result = multipass.solve_multipass(
-            participants,
-            active_tournaments,
-            progress_callback=progress_callback
-        )
-        
-        status_text.empty()
-        
-        # Traiter le résultat
-        if result.status == 'success':
-            st.success(result.message)
-            
-            # Sauvegarder les solutions
-            st.session_state.solutions = result.solutions
-            st.session_state.solver_info = {'pass': result.pass_number}
-            
-            if result.relaxed_participants:
-                st.info(f"ℹ️ Participants lésés: {', '.join(result.relaxed_participants)}")
-        
-        elif result.status == 'need_user_choice':
-            st.warning(result.message)
-            
-            # Sauvegarder les solutions partielles et les candidats
-            if result.solutions:
-                st.session_state.solutions = result.solutions
+        # TOUJOURS sauvegarder les candidats pour permettre le choix manuel
+        if result.candidates_if_failed:
             st.session_state.candidates = result.candidates_if_failed
-            st.session_state.solver_info = {'pass': result.pass_number}
             st.session_state.active_tournaments = active_tournaments
             st.session_state.participants_for_relax = participants
-            
-            st.info("👇 Voir la section 'Aide au Choix' ci-dessous pour sélectionner qui léser")
+            st.info("💡 Des solutions ont été trouvées automatiquement. Vous pouvez affiner en choisissant manuellement dans 'Aide au Choix' ci-dessous.")
         
-        elif result.status == 'impossible':
-            st.error(result.message)
-            
-            # Diagnostic automatique
-            diagnostics = ConflictAnalyzer.analyze_why_no_solution(
-                participants,
-                active_tournaments,
-                config
-            )
-            
-            diagnostic_message = format_diagnostic_message(diagnostics)
-            st.markdown(diagnostic_message)
-            
-            # Sauvegarder solutions partielles si elles existent
-            if result.solutions:
-                st.info(f"ℹ️ {len(result.solutions)} solution(s) partielle(s) trouvée(s) malgré tout")
-                st.session_state.solutions = result.solutions
-                st.session_state.solver_info = {'pass': result.pass_number}
+        if result.relaxed_participants:
+            st.info(f"ℹ️ Participants lésés automatiquement: {', '.join(result.relaxed_participants)}")
+    
+    elif result.status == 'need_user_choice':
+        st.warning(result.message)
         
-        else:  # partial_success
-            st.warning(result.message)
-            if result.solutions:
-                st.session_state.solutions = result.solutions
-                st.session_state.solver_info = {'pass': result.pass_number}
+        # Sauvegarder TOUJOURS solutions (même vide) pour afficher l'Aide au Choix
+        st.session_state.solutions = result.solutions if result.solutions else []
+        st.session_state.candidates = result.candidates_if_failed
+        st.session_state.solver_info = {'pass': result.pass_number}
+        st.session_state.active_tournaments = active_tournaments
+        st.session_state.participants_for_relax = participants
+        
+        st.info("👇 Voir la section 'Aide au Choix' ci-dessous pour sélectionner qui léser")
+    
+    elif result.status == 'impossible':
+        st.error(result.message)
+        
+        # Diagnostic automatique
+        diagnostics = ConflictAnalyzer.analyze_why_no_solution(
+            participants,
+            active_tournaments,
+            config
+        )
+        
+        diagnostic_message = format_diagnostic_message(diagnostics)
+        st.markdown(diagnostic_message)
+        
+        # Sauvegarder solutions partielles si elles existent
+        if result.solutions:
+            st.info(f"ℹ️ {len(result.solutions)} solution(s) partielle(s) trouvée(s) malgré tout")
+            st.session_state.solutions = result.solutions
+            st.session_state.solver_info = {'pass': result.pass_number}
+    
+    else:  # partial_success
+        st.warning(result.message)
+        if result.solutions:
+            st.session_state.solutions = result.solutions
+            st.session_state.solver_info = {'pass': result.pass_number}
 
 # ======================================================
-# SECTION 5: RÉSULTATS
+# SECTION 5: RÉSULTATS ET AIDE AU CHOIX
 # ======================================================
-if st.session_state.solutions:
+# Afficher si on a des solutions OU des candidats à léser
+if st.session_state.solutions or ('candidates' in st.session_state and st.session_state.candidates):
     st.markdown("---")
     st.header("4. Résultats")
     
-    solutions = st.session_state.solutions
+    solutions = st.session_state.solutions if st.session_state.solutions else []
     
     # Reconstruire active_tournaments pour l'affichage
     active_tournaments = [
@@ -696,58 +709,7 @@ if st.session_state.solutions:
         if st.session_state.include_o3 or t['id'] != 'O3'
     ]
     
-    # Statistiques générales
-    st.subheader("📊 Statistiques Générales")
-    
-    stats = analyze_solutions(solutions)
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.metric(
-            "Total Solutions",
-            stats['total'],
-            help="Nombre total de solutions trouvées"
-        )
-    
-    with col2:
-        pct = (stats['perfect'] / stats['total'] * 100) if stats['total'] > 0 else 0
-        st.metric(
-            "✅ Parfaites",
-            stats['perfect'],
-            delta=f"{pct:.0f}%",
-            help="Tous les vœux respectés"
-        )
-    
-    with col3:
-        st.metric(
-            "⚠️ 1 Vœu",
-            stats['one_violated'],
-            help="1 seul vœu non respecté"
-        )
-    
-    with col4:
-        st.metric(
-            "⚠️⚠️ 2 Vœux",
-            stats['two_violated'],
-            help="2 vœux non respectés"
-        )
-    
-    with col5:
-        st.metric(
-            "❌ 3+ Vœux",
-            stats['three_plus_violated'],
-            help="3 vœux ou plus non respectés"
-        )
-    
-    # Qualité moyenne
-    st.metric(
-        "Score Qualité Moyen",
-        f"{stats['avg_quality']:.1f}/100",
-        help="Score moyen de toutes les solutions (plus élevé = mieux)"
-    )
-    
-    # Aide au choix - FUSIONNÉE
+    # Aide au choix - Afficher EN PREMIER si pas de solutions
     st.markdown("---")
     st.subheader("🔍 Aide au Choix")
     
@@ -771,17 +733,72 @@ if st.session_state.solutions:
         # Trier par jours si lésé DESCENDANT (ceux qui joueraient le plus en premier)
         df_candidates = pd.DataFrame(candidates_data).sort_values('Jours si lésé', ascending=False)
         
-        st.dataframe(df_candidates,  width='stretch', hide_index=True)
+        st.dataframe(df_candidates, width="stretch", hide_index=True)
         
-        # Sélection
-        selected_to_relax = st.multiselect(
-            "Sélectionnez qui accepter de léser:",
-            options=[c['Nom'] for c in candidates_data],
-            help="Cochez les participants dont vous acceptez de ne pas respecter entièrement les vœux"
+        # Créer la liste avec "Nom étape" et "Nom open" pour chaque candidat
+        # Éliminer les doublons en utilisant un set
+        candidate_names = list(set([c['Nom'] for c in candidates_data]))
+        
+        relax_options = []
+        for name in sorted(candidate_names):  # Tri alphabétique
+            participant = next(p for p in st.session_state.participants_for_relax if p.nom == name)
+            if participant.voeux_etape > 0:
+                relax_options.append(f"{name} étape")
+            if participant.voeux_open > 0:
+                relax_options.append(f"{name} open")
+        
+        # Sélection directe avec type inclus
+        st.markdown("#### 👥 Sélection des lésions")
+        selected_relax_with_type = st.multiselect(
+            "Choisissez qui léser et comment :",
+            options=relax_options,
+            help="Format : 'Nom étape' pour réduire les étapes, 'Nom open' pour réduire les opens"
         )
         
-        if selected_to_relax and st.button("🔄 Recalculer avec ces relaxations", type="primary"):
+        if selected_relax_with_type and st.button("🔄 Recalculer avec ces relaxations", type="primary"):
             with st.spinner("Calcul avec relaxations..."):
+                # Importer RelaxationCandidate
+                from src.multipass_solver import RelaxationCandidate
+                
+                # Parser les choix "Nom étape" ou "Nom open"
+                relax_candidates = []
+                for choice in selected_relax_with_type:
+                    # Parser le format "Nom type"
+                    if " étape" in choice:
+                        name = choice.replace(" étape", "")
+                        relax_type = "étape"
+                    elif " open" in choice:
+                        name = choice.replace(" open", "")
+                        relax_type = "open"
+                    else:
+                        continue  # Ignoré si format invalide
+                    
+                    # Trouver le participant
+                    participant = next((p for p in st.session_state.participants_for_relax if p.nom == name), None)
+                    if not participant:
+                        continue
+                    
+                    if relax_type == "étape":
+                        # Forcer réduction d'1 étape
+                        proposed_etape = max(0, participant.voeux_etape - 1)
+                        proposed_open = participant.voeux_open
+                        reason = "Étape -1j (manuel)"
+                    else:  # "open"
+                        # Forcer réduction d'1 open
+                        proposed_etape = participant.voeux_etape
+                        proposed_open = max(0, participant.voeux_open - 1)
+                        reason = "Open -1j (manuel)"
+                    
+                    relax_candidates.append(RelaxationCandidate(
+                        participant_name=name,
+                        current_wishes_etape=participant.voeux_etape,
+                        current_wishes_open=participant.voeux_open,
+                        proposed_wishes_etape=proposed_etape,
+                        proposed_wishes_open=proposed_open,
+                        impact_days_if_relaxed=proposed_etape + proposed_open,
+                        reason=reason
+                    ))
+                
                 multipass = MultiPassSolver(SolverConfig(
                     include_o3=st.session_state.include_o3,
                     allow_incomplete=st.session_state.allow_incomplete,
@@ -792,20 +809,18 @@ if st.session_state.solutions:
                 result = multipass.solve_with_relaxation(
                     st.session_state.participants_for_relax,
                     st.session_state.active_tournaments,
-                    relax_names=selected_to_relax
+                    relax_candidates  # Passer les RelaxationCandidate avec le bon type
                 )
                 
                 if result.status == 'success':
                     st.success(result.message)
                     st.session_state.solutions = result.solutions
-                    st.session_state.solver_info = {'pass': result.pass_number, 'relaxed': selected_to_relax}
-                    # Nettoyer les candidats pour pas qu'ils réapparaissent
-                    if 'candidates' in st.session_state:
-                        del st.session_state.candidates
-                    if 'participants_for_relax' in st.session_state:
-                        del st.session_state.participants_for_relax
-                    if 'active_tournaments' in st.session_state:
-                        del st.session_state.active_tournaments
+                    st.session_state.solver_info = {'pass': result.pass_number, 'relaxed': selected_relax_with_type}
+                    
+                    # GARDER les candidats pour permettre de changer la sélection
+                    # Ne PAS nettoyer candidates, participants_for_relax, active_tournaments
+                    # pour permettre à l'utilisateur de refaire un autre choix
+                    
                     st.rerun()
                 else:
                     st.error(result.message)
@@ -839,7 +854,7 @@ if st.session_state.solutions:
             df_violated = pd.DataFrame(violated_stats)
             st.dataframe(
                 df_violated,
-                 width='stretch',
+                width="stretch",
                 hide_index=True,
                 height=min(300, 35 * (len(df_violated) + 1))
             )
@@ -857,9 +872,10 @@ if st.session_state.solutions:
         key=lambda s: -s.get_quality_score()  # Décroissant (meilleur d'abord)
     )
     
-    # Navigation par niveaux de compromis
-    st.markdown("---")
-    st.subheader("🎯 Navigation par Niveau de Compromis")
+    # Navigation par niveaux de compromis (seulement si on a des solutions)
+    if solutions:
+        st.markdown("---")
+        st.subheader("🎯 Navigation par Niveau de Compromis")
     
     # Calculer les catégories
     perfect = []
@@ -905,7 +921,7 @@ if st.session_state.solutions:
     
     with col_stat4:
         st.metric("🟠 Compromis", len(more_than_two))
-        st.caption(">2j lésés/personne")
+        st.caption("Plus de 2j lésés/personne")
     
     # Sélecteur de niveau
     st.markdown("#### 🔍 Choisir le Niveau de Compromis")
@@ -1038,20 +1054,112 @@ if st.session_state.solutions:
         st.warning("⚠️ Aucune solution ne correspond aux filtres sélectionnés. Essayez de les assouplir.")
         st.stop()
     
-    # Comparatif des variantes filtrées
-    st.markdown("---")
-    st.subheader(f"📊 Comparatif ({len(filtered)} variantes affichées)")
+    # IMPORTANT: Re-trier par score APRÈS filtrage pour avoir les 10 MEILLEURS
+    filtered = sorted(
+        filtered,
+        key=lambda s: -s.get_quality_score()
+    )
     
-    if len(filtered) > 1:
+    # ==================== AFFICHAGE DES PROFILS DE LÉSÉS UNIQUES ====================
+    st.markdown("---")
+    st.subheader("👥 Profils de Lésés (liste unique)")
+    st.caption("Chaque profil représente une combinaison unique de personnes lésées avec leur nombre de jours")
+    
+    # Créer un dictionnaire des profils : clé = signature unique, valeur = liste des solutions
+    profils_dict = {}
+    
+    for sol in filtered:
+        # Créer la liste des personnes lésées avec leurs jours
+        leses = []
+        for p in participants:
+            stats = sol.get_participant_stats(p.nom)
+            ecart = stats['ecart']
+            if ecart < 0:
+                leses.append((p.nom, abs(ecart)))
+        
+        # Trier : d'abord par jours lésés (décroissant), puis par nom alphabétique
+        leses_sorted = sorted(leses, key=lambda x: (-x[1], x[0]))
+        
+        # Créer une signature unique pour ce profil
+        signature = tuple(leses_sorted)
+        
+        if signature not in profils_dict:
+            profils_dict[signature] = []
+        profils_dict[signature].append(sol)
+    
+    # Afficher les profils uniques
+    st.info(f"🔍 {len(profils_dict)} profil(s) unique(s) de lésions parmi {len(filtered)} solutions")
+    
+    # Sélecteur de profil pour filtrer
+    profil_labels = []
+    profil_signatures = []
+    for idx, (signature, solutions) in enumerate(profils_dict.items(), 1):
+        profil_str = ", ".join([f"{nom} (-{jours}j)" for nom, jours in signature])
+        nb_variantes = len(solutions)
+        profil_labels.append(f"Profil #{idx} : {profil_str} ({nb_variantes} variantes)")
+        profil_signatures.append(signature)
+    
+    selected_profil_index = st.selectbox(
+        "🎯 Filtrer par profil (optionnel):",
+        options=["Tous les profils"] + profil_labels,
+        help="Sélectionnez un profil pour afficher uniquement ses variantes"
+    )
+    
+    # Appliquer le filtre de profil si sélectionné
+    if selected_profil_index != "Tous les profils":
+        # Extraire l'index du profil
+        profil_idx = profil_labels.index(selected_profil_index)
+        selected_signature = profil_signatures[profil_idx]
+        
+        # Filtrer pour ne garder que les solutions de ce profil
+        filtered = profils_dict[selected_signature]
+        
+        st.success(f"✅ Affichage de {len(filtered)} variantes du profil sélectionné")
+        
+        # Re-trier par score
+        filtered = sorted(filtered, key=lambda s: -s.get_quality_score())
+    
+    # Créer un expander pour voir tous les profils
+    with st.expander(f"📋 Voir les {len(profils_dict)} profil(s) unique(s)", expanded=True):
+        for idx, (signature, solutions) in enumerate(profils_dict.items(), 1):
+            # Formater le profil
+            profil_str = ", ".join([f"{nom} (-{jours}j)" for nom, jours in signature])
+            
+            # Nombre de variantes pour ce profil
+            nb_variantes = len(solutions)
+            
+            # Score moyen
+            score_moyen = sum(s.get_quality_score() for s in solutions) / nb_variantes
+            
+            # Total jours lésés
+            total_lese = sum(jours for _, jours in signature)
+            
+            # Afficher le profil avec des métriques
+            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+            with col1:
+                st.markdown(f"**Profil #{idx}** : {profil_str}")
+            with col2:
+                st.metric("Variantes", nb_variantes)
+            with col3:
+                st.metric("Total lésé", f"{total_lese}j")
+            with col4:
+                st.metric("Score moyen", f"{score_moyen:.0f}/100")
+    
+    # Comparatif des 10 meilleures variantes
+    st.markdown("---")
+    best_10 = filtered[:10]
+    st.subheader(f"📊 Comparatif des {len(best_10)} Meilleures Variantes")
+    
+    if len(best_10) > 1:
         col_comp1, col_comp2 = st.columns(2)
         
         with col_comp1:
-            fig_comparison = create_quality_comparison_chart(filtered[:10])
-            st.plotly_chart(fig_comparison,  width='stretch', key="comp_chart")
+            fig_comparison = create_quality_comparison_chart(best_10)
+            st.plotly_chart(fig_comparison, width="stretch", key="comp_chart")
         
         with col_comp2:
-            fig_overview = create_statistics_overview(filtered)
-            st.plotly_chart(fig_overview,  width='stretch', key="overview_chart")
+            fig_overview = create_statistics_overview(best_10)
+            st.plotly_chart(fig_overview, width="stretch", key="overview_chart")
     else:
         st.info("Une seule variante disponible - voir détails ci-dessous")
     
@@ -1122,11 +1230,11 @@ if st.session_state.solutions:
                 
                 with col_ana1:
                     fig_workload = create_workload_distribution_chart(solution)
-                    st.plotly_chart(fig_workload,  width='stretch', key=f"workload_{i}")
+                    st.plotly_chart(fig_workload, width="stretch", key=f"workload_{i}")
                 
                 with col_ana2:
                     fig_consecutive = create_consecutive_days_chart(solution)
-                    st.plotly_chart(fig_consecutive,  width='stretch', key=f"consecutive_{i}")
+                    st.plotly_chart(fig_consecutive, width="stretch", key=f"consecutive_{i}")
                 
                 # Planning par lieu
                 st.markdown("### 📍 Planning par Lieu")
@@ -1234,14 +1342,14 @@ if st.session_state.solutions:
                     return ''
                 
                 # Appliquer le style
-                styled_df = df_recap.style.applymap(
+                styled_df = df_recap.style.map(
                     color_ecart,
                     subset=['Écart']
                 )
                 
                 st.dataframe(
                     styled_df,
-                     width='stretch',
+                    width="stretch",
                     hide_index=True,
                     height=35 * (len(df_recap) + 1),
                     column_config={
@@ -1268,6 +1376,9 @@ if st.session_state.solutions:
                         file_name=f"solution_estivales_{i+1}.csv",
                         mime="text/csv"
                     )
+else:
+    # Pas de solutions, seulement Aide au Choix affichée
+    st.info("ℹ️ Aucune solution trouvée. Utilisez l'Aide au Choix ci-dessus pour débloquer la situation.")
 
 # ======================================================
 # FOOTER

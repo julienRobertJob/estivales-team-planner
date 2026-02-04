@@ -119,33 +119,70 @@ class TournamentSolver:
         solver_pass1.parameters.log_search_progress = False
         solver_pass1.parameters.num_search_workers = 8
         
+        # Paramètres pour exploration plus large et meilleure optimisation
+        solver_pass1.parameters.linearization_level = 0
+        solver_pass1.parameters.cp_model_presolve = True
+        solver_pass1.parameters.cp_model_probing_level = 2
+        
+        # Stratégies de recherche pour éviter les blocages locaux
+        solver_pass1.parameters.search_branching = cp_model.FIXED_SEARCH
+        solver_pass1.parameters.optimize_with_core = True  # Utilise le core pour l'optimisation
+        
+        # Pas de hints restrictifs - laisser le solver explorer librement
+        # (on retire les hints qui forçaient 50% de non-participation)
+        
         status_pass1 = solver_pass1.Solve(model_pass1)
         
         if status_pass1 not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
             # Pas de solution trouvée
             elapsed = time.time() - start_time
-            return [], solver_pass1.StatusName(status_pass1), {
-                'status': solver_pass1.StatusName(status_pass1),
+            
+            # Message plus détaillé selon le statut
+            status_name = solver_pass1.StatusName(status_pass1)
+            if status_pass1 == cp_model.INFEASIBLE:
+                status_name = "INFEASIBLE - Le modèle n'a aucune solution valide. " \
+                              "Vérifiez : équipes incomplètes, nombre de participants, vœux stricts."
+            elif status_pass1 == cp_model.MODEL_INVALID:
+                status_name = "MODEL_INVALID - Le modèle contient des erreurs"
+            
+            return [], status_name, {
+                'status': status_name,
                 'num_solutions': 0,
                 'elapsed_time': elapsed,
                 'num_branches': solver_pass1.NumBranches(),
                 'wall_time': solver_pass1.WallTime(),
+                'num_conflicts': solver_pass1.NumConflicts(),
                 'pass': 1
             }
         
         # Récupérer le score optimal trouvé
         optimal_score = int(solver_pass1.ObjectiveValue())
         
+        # EXTRAIRE les valeurs optimales des CRITÈRES PRINCIPAUX SEULEMENT
+        # On veut énumérer toutes les solutions avec :
+        # 1. Même lésion maximale individuelle (priorité #1)
+        # 2. Même total de jours lésés (priorité #2)
+        # MAIS on ignore le critère tertiaire (distribution) pour avoir TOUS les profils
+        
+        optimal_max_shortage = int(solver_pass1.Value(auxiliary_vars_pass1.get("max_shortage", 0)))
+        
+        # Calculer le total des shortages depuis les variables individuelles
+        optimal_total_shortage = sum(
+            int(solver_pass1.Value(auxiliary_vars_pass1[f"shortage_{p.nom}"]))
+            for p in participants
+            if f"shortage_{p.nom}" in auxiliary_vars_pass1
+        )
+        
         # ================================================================
-        # PASS 2: ÉNUMÉRER TOUTES LES SOLUTIONS À CE SCORE
+        # PASS 2: ÉNUMÉRER TOUTES LES SOLUTIONS AVEC CES CRITÈRES
         # ================================================================
         if progress_callback:
             elapsed = time.time() - start_time
             progress_callback(1, 2, elapsed)
         
-        # Reconstruire le modèle SANS objectif (satisfaction pure)
+        # Reconstruire le modèle pour énumération avec contraintes relaxées
         model_pass2, variables_pass2, auxiliary_vars_pass2 = self._build_model_for_enumeration(
-            participants, tournaments, optimal_score
+            participants, tournaments, optimal_max_shortage, optimal_total_shortage
         )
         
         # Collecter TOUTES les solutions
@@ -230,8 +267,7 @@ class TournamentSolver:
         days_played = self._calculate_days_played(
             model, x, participants, tournaments, auxiliary_vars
         )
-        
-        # Calculer les écarts aux vœux
+        # Calculer les écarts aux vœux (shortage brut pour critère principal)
         wish_deviations = self._calculate_wish_deviations(
             model, days_played, participants, auxiliary_vars
         )
@@ -241,11 +277,25 @@ class TournamentSolver:
             model, x, participants, tournaments, auxiliary_vars
         )
         
-        # Fonction objectif multi-critères
+        # CRITÈRE SECONDAIRE : Distribution (qui est lésé)
+        # Récupérer les pénalités de distribution calculées
+        distribution_penalties = [
+            auxiliary_vars[f"distribution_penalty_{p.nom}"]
+            for p in participants
+            if f"distribution_penalty_{p.nom}" in auxiliary_vars
+        ]
+        
+        # CRITÈRE PRINCIPAL : Lésion maximale individuelle
+        max_shortage = auxiliary_vars.get("max_shortage", 0)
+        
+        # Fonction objectif multi-critères HIÉRARCHIQUES
+        # Poids: 100000 (max lésion) >> 1000 (total lésé) >> 500 (fatigue) >> 10 (incomplet) >> 1 (distribution)
         objective = (
-            sum(wish_deviations) * self.config.weight_wishes +
-            sum(fatigue_penalties) * self.config.weight_fatigue +
-            sum(incomplete_penalties) * self.config.weight_incomplete
+            max_shortage * 100000 +                                      # 100000 - ÉVITER GROSSE LÉSION
+            sum(wish_deviations) * self.config.weight_wishes +           # 1000 - TOTAL LÉSÉ
+            sum(fatigue_penalties) * self.config.weight_fatigue +        # 500
+            sum(incomplete_penalties) * self.config.weight_incomplete +  # 10
+            sum(distribution_penalties) * 1                              # 1 - départage à égalité
         )
         
         model.Minimize(objective)
@@ -256,18 +306,26 @@ class TournamentSolver:
         self,
         participants: List[Participant],
         tournaments: List[Tournament],
-        target_score: int
+        target_max_shortage: int,
+        target_total_shortage: int
     ) -> Tuple[cp_model.CpModel, Dict, Dict]:
         """
         Construit un modèle de SATISFACTION (sans objectif à minimiser)
-        pour énumérer toutes les solutions ayant le score target_score.
+        pour énumérer toutes les solutions ayant les mêmes critères principaux.
         
-        Cette méthode est utilisée en PASS 2 après avoir trouvé le score optimal.
+        STRATÉGIE v2.2.3 : On contraint SEULEMENT les 2 critères principaux
+        - Lésion maximale individuelle = target_max_shortage
+        - Total jours lésés = target_total_shortage
+        
+        On IGNORE le critère tertiaire (distribution) pour obtenir TOUS les profils possibles.
+        
+        Cette méthode est utilisée en PASS 2 après avoir trouvé les valeurs optimales.
         
         Args:
             participants: Liste des participants
             tournaments: Liste des tournois
-            target_score: Score optimal trouvé en PASS 1
+            target_max_shortage: Lésion maximale individuelle optimale (critère #1)
+            target_total_shortage: Total de jours lésés optimal (critère #2)
             
         Returns:
             Tuple (model, variables, auxiliary_vars)
@@ -301,7 +359,6 @@ class TournamentSolver:
         
         # 4. Contrainte de vœux (ne jamais dépasser + strict si demandé)
         self._add_wish_constraints(model, x, participants, tournaments)
-        
         # 5. Calculer les jours joués
         days_played = self._calculate_days_played(
             model, x, participants, tournaments, auxiliary_vars
@@ -317,16 +374,26 @@ class TournamentSolver:
             model, x, participants, tournaments, auxiliary_vars
         )
         
-        # === CONTRAINTE DE SCORE OPTIMAL ===
-        # C'est la CLEF : on transforme l'objectif en CONTRAINTE
-        objective_value = (
-            sum(wish_deviations) * self.config.weight_wishes +
-            sum(fatigue_penalties) * self.config.weight_fatigue +
-            sum(incomplete_penalties) * self.config.weight_incomplete
-        )
+        # 8. Récupérer la lésion max et les shortages individuels
+        max_shortage = auxiliary_vars.get("max_shortage", 0)
         
-        # CONTRAINTE: Le score doit être exactement égal au score optimal
-        model.Add(objective_value == target_score)
+        # Calculer le total des shortages
+        total_shortage = model.NewIntVar(0, 9 * len(participants), "total_shortage")
+        model.Add(total_shortage == sum(wish_deviations))
+        
+        # === CONTRAINTES DES CRITÈRES PRINCIPAUX SEULEMENT ===
+        # C'est la CLEF pour avoir TOUS les profils possibles :
+        # On contraint SEULEMENT les 2 critères dominants, pas le tertiaire
+        
+        # CONTRAINTE #1 : Lésion maximale individuelle
+        model.Add(max_shortage == target_max_shortage)
+        
+        # CONTRAINTE #2 : Total de jours lésés
+        model.Add(total_shortage == target_total_shortage)
+        
+        # NOTE : On NE contraint PAS distribution_penalties ni fatigue_penalties
+        # Cela permet d'énumérer TOUS les profils de lésés différents
+        # qui ont le même max et le même total
         
         # PAS de model.Minimize() ici ! C'est maintenant un problème de satisfaction.
         
@@ -554,8 +621,26 @@ class TournamentSolver:
         participants: List[Participant],
         auxiliary_vars: Dict
     ) -> List[cp_model.IntVar]:
-        """Calcule les écarts aux vœux pour chaque participant"""
+        """
+        Calcule les écarts aux vœux pour chaque participant.
+        
+        STRATÉGIE CORRIGÉE (v2.2.3):
+        1. CRITÈRE PRINCIPAL : Minimiser la LÉSION MAXIMALE INDIVIDUELLE
+        2. CRITÈRE SECONDAIRE : Minimiser le TOTAL des jours lésés
+        3. CRITÈRE TERTIAIRE : À égalité, favoriser léser les gros demandeurs
+        
+        On retourne shortage NON pondéré pour le critère secondaire.
+        Le critère principal (max) et tertiaire (distribution) seront dans l'objectif.
+        
+        Exemples attendus :
+        - 1 pers -3j vs 3 pers -1j → on PRÉFÈRE le second (éviter grosse lésion)
+        - À total égal, 2j répartis sur 2 pers > 2j sur 1 pers
+        - À égalité, léser qq qui demande 5j > léser qq qui demande 2j
+        """
         deviations = []
+        
+        # Variable pour la lésion maximale individuelle (CRITÈRE PRINCIPAL)
+        max_shortage = model.NewIntVar(0, 9, "max_shortage")
         
         for participant in participants:
             wished_days = participant.voeux_jours_total
@@ -565,13 +650,33 @@ class TournamentSolver:
             deviation = model.NewIntVar(-9, 9, f"deviation_{participant.nom}")
             model.Add(deviation == played_days - wished_days)
             
-            # Valeur absolue de l'écart
-            abs_deviation = model.NewIntVar(0, 9, f"abs_deviation_{participant.nom}")
-            model.AddAbsEquality(abs_deviation, deviation)
+            # shortage = max(0, -deviation) = nombre de jours en moins
+            shortage = model.NewIntVar(0, 9, f"shortage_{participant.nom}")
+            model.AddMaxEquality(shortage, [0, -deviation])
             
-            deviations.append(abs_deviation)
+            # CRITÈRE PRINCIPAL : mettre à jour le max
+            model.Add(max_shortage >= shortage)
+            
+            # CRITÈRE SECONDAIRE : shortage brut (non pondéré)
+            deviations.append(shortage)
+            
+            # CRITÈRE TERTIAIRE : pondération pour départager à égalité
+            # Plus tu demandes, moins c'est grave d'être lésé
+            # poids = max(1, 6 - demandes)
+            weight = max(1, 6 - wished_days)
+            
+            # Pénalité de distribution (utilisée avec poids faible dans objectif)
+            distribution_penalty = model.NewIntVar(0, 9 * weight, f"distrib_{participant.nom}")
+            model.AddMultiplicationEquality(distribution_penalty, [shortage, weight])
+            
+            # Stocker pour utilisation dans l'objectif
             auxiliary_vars[f"deviation_{participant.nom}"] = deviation
-            auxiliary_vars[f"abs_deviation_{participant.nom}"] = abs_deviation
+            auxiliary_vars[f"shortage_{participant.nom}"] = shortage
+            auxiliary_vars[f"weight_{participant.nom}"] = weight
+            auxiliary_vars[f"distribution_penalty_{participant.nom}"] = distribution_penalty
+        
+        # Stocker la lésion maximale
+        auxiliary_vars["max_shortage"] = max_shortage
         
         return deviations
     

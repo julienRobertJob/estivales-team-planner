@@ -73,6 +73,11 @@ TOURNAMENTS = [
 
 # Données par défaut (ordre alphabétique)
 DEFAULT_PARTICIPANTS = [
+# ['Delphine', 'F', None, 1, 0, 'E2', False],
+#     ['Emilie', 'F', None, 1, 0, 'O3', False],
+#     ['Kathleen', 'F', None, 1, 0, 'O3', False],
+#     ['Lise', 'F', None, 1, 0, 'O3', False],
+
     ['Delphine', 'F', None, 2, 0, 'E2', False],
     ['Emilie', 'F', 'Julien', 2, 0, 'O3', False],
     ['Hugo', 'M', None, 1, 1, 'E3', False],
