@@ -10,7 +10,12 @@ from src.constants import TEAM_SIZE, MAX_CONSECUTIVE_DAYS
 
 
 class SolutionCollector(cp_model.CpSolverSolutionCallback):
-    """Collecte les solutions trouvées par OR-Tools"""
+    """Collecte les solutions trouvées par OR-Tools
+    
+    Modes de fonctionnement:
+    - mode='all': Collecte toutes les solutions (ancien comportement)
+    - mode='unique_profiles': Ne garde que la meilleure variante de chaque profil unique
+    """
     
     def __init__(
         self,
@@ -18,7 +23,9 @@ class SolutionCollector(cp_model.CpSolverSolutionCallback):
         tournaments: List[Tournament],
         participants: List[Participant],
         limit: int,
-        progress_callback=None
+        progress_callback=None,
+        mode: str = 'unique_profiles',
+        min_quality_score: int = 0
     ):
         super().__init__()
         self._variables = variables
@@ -28,21 +35,102 @@ class SolutionCollector(cp_model.CpSolverSolutionCallback):
         self._solutions = []
         self._progress_callback = progress_callback
         self._start_time = time.time()
+        self._mode = mode
+        self._min_quality_score = min_quality_score
+        
+        # Pour mode 'unique_profiles': tracker profils et leurs meilleures solutions
+        self._profile_signatures = {}  # signature -> (solution, objective_value)
+        self._solutions_count = 0  # Compte total de solutions rencontrées
+        self._solutions_rejected_score = 0  # Compte solutions rejetées pour score
+    
+    def _compute_profile_signature(self, solution) -> str:
+        """Calcule une signature unique pour identifier un profil de lésés
+        
+        Signature = liste triée des (nom, écart) pour les participants lésés
+        Ex: "Hugo:-4" ou "Julien:-1,Rémy:-1,Sophie:-1,Sylvain:-1"
+        """
+        violated = []
+        for p in self._participants:
+            stats = solution.get_participant_stats(p.nom)
+            ecart = stats['ecart']
+            if ecart < 0:  # Participant lésé
+                violated.append(f"{p.nom}:{ecart}")
+        
+        # Trier pour avoir une signature canonique
+        violated.sort()
+        return ",".join(violated) if violated else "PERFECT"
+    
+    def _compute_objective_value(self, solution) -> int:
+        """Calcule la valeur d'objectif OR-Tools pour une solution
+        
+        Reproduit la fonction objectif de _build_model:
+        - max_shortage * 100000 (priorité absolue)
+        - total_shortage * 1000
+        - fatigue_penalties * 500
+        - incomplete_penalties * 10
+        - distribution_penalties * 1
+        """
+        # Max shortage (critère dominant)
+        max_shortage = max(
+            (abs(solution.get_participant_stats(p.nom)['ecart']) 
+             for p in self._participants if solution.get_participant_stats(p.nom)['ecart'] < 0),
+            default=0
+        )
+        
+        # Total shortage
+        total_shortage = sum(
+            abs(solution.get_participant_stats(p.nom)['ecart'])
+            for p in self._participants
+            if solution.get_participant_stats(p.nom)['ecart'] < 0
+        )
+        
+        # Fatigue (calculée à partir de max_consecutive_days)
+        # Pénalité : si >3j consécutifs, (jours - 3) au carré
+        fatigue = 0
+        for p in self._participants:
+            stats = solution.get_participant_stats(p.nom)
+            max_cons = stats.get('max_consecutifs', 0)
+            if max_cons > 3:
+                fatigue += (max_cons - 3) ** 2
+        
+        # Équipes incomplètes (approximation)
+        incomplete = 0
+        for t in self._tournaments:
+            tournament_data = solution.assignments.get(t.id, {})
+            if t.is_etape:
+                # Vérifier séparément M et F
+                for genre in ['M', 'F']:
+                    players = tournament_data.get(genre, [])
+                    if len(players) > 0 and len(players) % 3 != 0:
+                        incomplete += 1
+            else:
+                # Open : tous ensemble
+                players = tournament_data.get('All', [])
+                if len(players) > 0 and len(players) % 3 != 0:
+                    incomplete += 1
+        
+        # Distribution (variance des écarts - approximation simple)
+        ecarts = [abs(solution.get_participant_stats(p.nom)['ecart']) 
+                 for p in self._participants]
+        distribution = sum(ecarts)  # Simplification
+        
+        # Calcul final (même pondération que dans _build_model)
+        objective = (max_shortage * 100000 + 
+                    total_shortage * 1000 + 
+                    fatigue * 500 + 
+                    incomplete * 10 + 
+                    distribution * 1)
+        
+        return objective
     
     def on_solution_callback(self):
         """Appelé à chaque solution trouvée"""
-        if len(self._solutions) >= self._solution_limit:
+        self._solutions_count += 1
+        
+        # Vérifier la limite TOTALE de solutions rencontrées (pas juste gardées)
+        if self._solution_limit and self._solutions_count >= self._solution_limit:
             self.StopSearch()
             return
-        
-        # Notifier la progression
-        if self._progress_callback:
-            elapsed = time.time() - self._start_time
-            self._progress_callback(
-                len(self._solutions) + 1,
-                self._solution_limit,
-                elapsed
-            )
         
         # Extraire la solution
         solution_data = {}
@@ -69,11 +157,68 @@ class SolutionCollector(cp_model.CpSolverSolutionCallback):
         # Calculer les stats
         solution.calculate_stats()
         
-        self._solutions.append(solution)
+        # NOTE IMPORTANTE: On ne filtre PAS par score qualité ici !
+        # Le score qualité (0-100) est différent de l'objectif OR-Tools.
+        # Le filtrage par score se fait APRÈS dans app.py pour ne pas
+        # manquer des solutions que OR-Tools considère optimales.
+        # Exemple: une solution avec score 70 peut avoir un max_shortage
+        # plus élevé qu'une solution score 69, donc OR-Tools la rejette,
+        # mais pour l'utilisateur elle est meilleure !
+        
+        # Traitement selon le mode
+        if self._mode == 'all':
+            # Mode classique: garder toutes les solutions
+            self._solutions.append(solution)
+        
+        elif self._mode == 'unique_profiles':
+            # Mode profils uniques: ne garder que la meilleure de chaque profil
+            signature = self._compute_profile_signature(solution)
+            objective = self._compute_objective_value(solution)
+            
+            if signature not in self._profile_signatures:
+                # Nouveau profil découvert
+                self._profile_signatures[signature] = (solution, objective)
+            else:
+                # Profil déjà connu: garder le meilleur
+                prev_solution, prev_objective = self._profile_signatures[signature]
+                if objective < prev_objective:  # Meilleur score (minimisation)
+                    self._profile_signatures[signature] = (solution, objective)
+        
+        # Notifier la progression
+        if self._progress_callback:
+            elapsed = time.time() - self._start_time
+            if self._mode == 'unique_profiles':
+                current = len(self._profile_signatures)
+            else:
+                current = len(self._solutions)
+            
+            self._progress_callback(
+                current,
+                self._solution_limit if self._solution_limit else current,
+                elapsed
+            )
     
     def get_solutions(self) -> List[Solution]:
-        """Retourne les solutions collectées"""
-        return self._solutions
+        """Retourne les solutions collectées, triées par score qualité"""
+        if self._mode == 'unique_profiles':
+            # Extraire les solutions des profils uniques
+            profile_solutions = [
+                (sig, sol, obj) 
+                for sig, (sol, obj) in self._profile_signatures.items()
+            ]
+            # Trier par SCORE QUALITÉ (meilleur d'abord)
+            # Note: Le score est maintenant aligné sur l'objectif OR-Tools
+            profile_solutions.sort(key=lambda x: -x[1].get_quality_score())
+            return [sol for _, sol, _ in profile_solutions]
+        else:
+            # Mode 'all': trier aussi par score qualité
+            return sorted(self._solutions, key=lambda s: -s.get_quality_score())
+    
+    def get_profile_count(self) -> int:
+        """Retourne le nombre de profils uniques trouvés"""
+        if self._mode == 'unique_profiles':
+            return len(self._profile_signatures)
+        return len(self._solutions)
 
 
 class TournamentSolver:
@@ -158,40 +303,33 @@ class TournamentSolver:
         # Récupérer le score optimal trouvé
         optimal_score = int(solver_pass1.ObjectiveValue())
         
-        # EXTRAIRE les valeurs optimales des CRITÈRES PRINCIPAUX SEULEMENT
-        # On veut énumérer toutes les solutions avec :
-        # 1. Même lésion maximale individuelle (priorité #1)
-        # 2. Même total de jours lésés (priorité #2)
-        # MAIS on ignore le critère tertiaire (distribution) pour avoir TOUS les profils
+        # EXTRAIRE la valeur optimale du CRITÈRE DOMINANT : lésion max individuelle
+        # C'est le SEUL critère qu'on va contraindre en PASS 2
+        # pour trouver TOUS les profils possibles ayant ce même max
         
         optimal_max_shortage = int(solver_pass1.Value(auxiliary_vars_pass1.get("max_shortage", 0)))
         
-        # Calculer le total des shortages depuis les variables individuelles
-        optimal_total_shortage = sum(
-            int(solver_pass1.Value(auxiliary_vars_pass1[f"shortage_{p.nom}"]))
-            for p in participants
-            if f"shortage_{p.nom}" in auxiliary_vars_pass1
-        )
-        
         # ================================================================
-        # PASS 2: ÉNUMÉRER TOUTES LES SOLUTIONS AVEC CES CRITÈRES
+        # PASS 2: ÉNUMÉRER TOUTES LES SOLUTIONS AVEC CE MAX_SHORTAGE
         # ================================================================
         if progress_callback:
             elapsed = time.time() - start_time
             progress_callback(1, 2, elapsed)
         
-        # Reconstruire le modèle pour énumération avec contraintes relaxées
+        # Reconstruire le modèle pour énumération avec SEULE contrainte : max_shortage
         model_pass2, variables_pass2, auxiliary_vars_pass2 = self._build_model_for_enumeration(
-            participants, tournaments, optimal_max_shortage, optimal_total_shortage
+            participants, tournaments, optimal_max_shortage
         )
         
-        # Collecter TOUTES les solutions
+        # Collecter les solutions selon le mode configuré
         collector = SolutionCollector(
             variables_pass2,
             tournaments,
             participants,
             self.config.max_solutions,
-            progress_callback
+            progress_callback,
+            mode=self.config.search_mode,
+            min_quality_score=self.config.min_quality_score
         )
         
         solver_pass2 = cp_model.CpSolver()
@@ -306,26 +444,23 @@ class TournamentSolver:
         self,
         participants: List[Participant],
         tournaments: List[Tournament],
-        target_max_shortage: int,
-        target_total_shortage: int
+        target_max_shortage: int
     ) -> Tuple[cp_model.CpModel, Dict, Dict]:
         """
         Construit un modèle de SATISFACTION (sans objectif à minimiser)
-        pour énumérer toutes les solutions ayant les mêmes critères principaux.
+        pour énumérer toutes les solutions ayant le même critère principal.
         
-        STRATÉGIE v2.2.3 : On contraint SEULEMENT les 2 critères principaux
+        STRATÉGIE v2.2.4 : On contraint SEULEMENT le critère dominant
         - Lésion maximale individuelle = target_max_shortage
-        - Total jours lésés = target_total_shortage
         
-        On IGNORE le critère tertiaire (distribution) pour obtenir TOUS les profils possibles.
+        On IGNORE le total et la distribution pour obtenir TOUS les profils possibles.
         
-        Cette méthode est utilisée en PASS 2 après avoir trouvé les valeurs optimales.
+        Cette méthode est utilisée en PASS 2 après avoir trouvé la valeur optimale.
         
         Args:
             participants: Liste des participants
             tournaments: Liste des tournois
-            target_max_shortage: Lésion maximale individuelle optimale (critère #1)
-            target_total_shortage: Total de jours lésés optimal (critère #2)
+            target_max_shortage: Lésion maximale individuelle optimale (critère unique)
             
         Returns:
             Tuple (model, variables, auxiliary_vars)
@@ -382,18 +517,22 @@ class TournamentSolver:
         model.Add(total_shortage == sum(wish_deviations))
         
         # === CONTRAINTES DES CRITÈRES PRINCIPAUX SEULEMENT ===
-        # C'est la CLEF pour avoir TOUS les profils possibles :
-        # On contraint SEULEMENT les 2 critères dominants, pas le tertiaire
+        # CORRECTION v2.2.4 : On contraint SEULEMENT le critère dominant (max_shortage)
+        # pour trouver TOUS les profils de lésés possibles
         
-        # CONTRAINTE #1 : Lésion maximale individuelle
+        # CONTRAINTE #1 : Lésion maximale individuelle (SEULE contrainte !)
         model.Add(max_shortage == target_max_shortage)
         
-        # CONTRAINTE #2 : Total de jours lésés
-        model.Add(total_shortage == target_total_shortage)
+        # CONTRAINTE #2 RETIRÉE : Total de jours lésés
+        # ANCIEN: model.Add(total_shortage == target_total_shortage)
+        # NOUVEAU: On NE contraint PAS le total, seulement le max
+        # 
+        # Pourquoi ? Pour trouver TOUS les profils possibles :
+        # - Avec max=4 : Hugo -4j (total=4) OU 4 personnes -1j (total=4) OU autres combinaisons
+        # - Sans cette contrainte, on explore toutes les distributions ayant le même max
         
-        # NOTE : On NE contraint PAS distribution_penalties ni fatigue_penalties
+        # NOTE : On NE contraint PAS non plus distribution_penalties ni fatigue_penalties
         # Cela permet d'énumérer TOUS les profils de lésés différents
-        # qui ont le même max et le même total
         
         # PAS de model.Minimize() ici ! C'est maintenant un problème de satisfaction.
         
@@ -748,3 +887,128 @@ def analyze_solutions(solutions: List[Solution]) -> Dict:
     }
     
     return stats
+
+
+    def explore_profile_in_depth(
+        self,
+        participants: List[Participant],
+        tournaments: List[Tournament],
+        target_profile: Dict[str, int],
+        progress_callback=None
+    ) -> Tuple[List[Solution], str, Dict]:
+        """
+        Explore en profondeur TOUTES les variantes d'un profil spécifique.
+        
+        Args:
+            participants: Liste des participants
+            tournaments: Liste des tournois actifs
+            target_profile: Dict {nom: écart_voulu} pour le profil cible
+                           Ex: {"Julien": -1, "Rémy": -1, "Sophie": -1, "Sylvain": -1}
+            progress_callback: Fonction appelée pour la progression
+            
+        Returns:
+            Tuple (solutions, status, info)
+        """
+        start_time = time.time()
+        
+        if progress_callback:
+            progress_callback(0, 1, 0)
+        
+        # Construire le modèle avec contraintes dures pour forcer le profil
+        model, variables, auxiliary_vars = self._build_model_for_profile(
+            participants, tournaments, target_profile
+        )
+        
+        # Collecter TOUTES les variantes de ce profil
+        collector = SolutionCollector(
+            variables,
+            tournaments,
+            participants,
+            self.config.max_solutions,
+            progress_callback,
+            mode='all'  # Mode exhaustif: toutes les variantes
+        )
+        
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = self.config.timeout_seconds
+        solver.parameters.log_search_progress = False
+        solver.parameters.num_search_workers = 8
+        
+        # Énumérer TOUTES les solutions
+        status = solver.SearchForAllSolutions(model, collector)
+        
+        elapsed_time = time.time() - start_time
+        
+        info = {
+            'status': solver.StatusName(status),
+            'num_solutions': len(collector.get_solutions()),
+            'elapsed_time': elapsed_time,
+            'num_branches': solver.NumBranches(),
+            'wall_time': solver.WallTime(),
+            'mode': 'profile_depth_exploration'
+        }
+        
+        if progress_callback:
+            progress_callback(
+                len(collector.get_solutions()), 
+                len(collector.get_solutions()), 
+                elapsed_time
+            )
+        
+        return collector.get_solutions(), solver.StatusName(status), info
+    
+    def _build_model_for_profile(
+        self,
+        participants: List[Participant],
+        tournaments: List[Tournament],
+        target_profile: Dict[str, int]
+    ) -> Tuple[cp_model.CpModel, Dict, Dict]:
+        """
+        Construit un modèle OR-Tools avec contraintes DURES pour un profil spécifique.
+        
+        Le profil fixe exactement combien de jours chaque participant doit jouer.
+        
+        Args:
+            participants: Liste des participants
+            tournaments: Liste des tournois
+            target_profile: Dict {nom: écart} - ex: {"Julien": -1} = joue 1j de moins
+            
+        Returns:
+            Tuple (model, variables, auxiliary_vars)
+        """
+        model = cp_model.CpModel()
+        
+        # Variables principales
+        x = {}
+        for participant in participants:
+            for tournament in tournaments:
+                x[(participant.nom, tournament.id)] = model.NewBoolVar(
+                    f"x_{participant.nom}_{tournament.id}"
+                )
+        
+        auxiliary_vars = {}
+        
+        # === CONTRAINTES NORMALES ===
+        self._add_couple_constraints(model, x, participants, tournaments)
+        self._add_team_constraints(model, x, participants, tournaments, auxiliary_vars)
+        self._add_availability_constraints(model, x, participants, tournaments)
+        
+        # === CONTRAINTES DURES POUR LE PROFIL ===
+        days_played = self._calculate_days_played(
+            model, x, participants, tournaments, auxiliary_vars
+        )
+        
+        for participant in participants:
+            total_voeux = participant.voeux_etape + participant.voeux_open
+            
+            if participant.nom in target_profile:
+                # Ce participant fait partie du profil: contrainte DURE
+                ecart = target_profile[participant.nom]
+                jours_cibles = total_voeux + ecart  # Ex: 6 + (-1) = 5
+                model.Add(days_played[participant.nom] == jours_cibles)
+            else:
+                # Participant pas dans le profil: doit respecter exactement ses vœux
+                model.Add(days_played[participant.nom] == total_voeux)
+        
+        return model, x, auxiliary_vars
+

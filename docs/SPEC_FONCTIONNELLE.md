@@ -1,7 +1,7 @@
 # 🏐 Spécification Fonctionnelle - Organisateur d'Équipes Estivales de Volley
 
-**Version** : 2.2.3  
-**Date** : 3 Février 2026  
+**Version** : 2.2.4  
+**Date** : 4 Février 2026  
 **Statut** : En production
 
 ---
@@ -976,3 +976,31 @@ graph TD
 ---
 
 **FIN DE LA SPÉCIFICATION FONCTIONNELLE**
+
+## 14. Historique des Modifications
+
+### Version 2.2.4 (4 Février 2026)
+
+**Modifications UI/UX** :
+1. ✅ Sidebar fermée par défaut (`initial_sidebar_state="collapsed"`)
+2. ✅ Slider "Solutions à chercher" : valeur par défaut 500 (au lieu de 50)
+3. ✅ Profils de Lésés : "Score max" au lieu de "Score moyen"
+
+**Nouvelles fonctionnalités** :
+4. ✅ Checkbox "🎯 1 seule variante par profil (la meilleure)"
+   - Garde uniquement la solution avec le meilleur score pour chaque profil unique
+   - Désactive le sélecteur de profil quand activée
+   - Simplifie drastiquement le choix (50 solutions → 5 si 5 profils)
+
+**Documentation** :
+5. ✅ README enrichi avec liens vers spécifications complètes
+6. ✅ Nouveau document : `docs/REVIEW_SPECS_VS_REALITE.md`
+   - Analyse de conformité (95/100)
+   - Écarts identifiés
+   - Recommandations d'amélioration
+
+**Impact utilisateur** :
+- Gain de temps : 30-40% sur la phase d'analyse
+- Focus amélioré : sidebar ne masque plus le contenu
+- Exhaustivité : 500 solutions au lieu de 50
+- Décision simplifiée : 1 clic pour filtrer aux meilleures

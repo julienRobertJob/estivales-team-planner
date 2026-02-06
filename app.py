@@ -132,30 +132,63 @@ with st.sidebar:
            - Nom, genre, couple
            - Vœux étapes et opens
            - Disponibilité
+           - Case "Respect_Voeux" (strict)
            
         2. **⚙️ Paramètres**
            - Inclure O3 (dimanche) ?
            - Autoriser équipes incomplètes ?
-           - Nombre de solutions à chercher
+           - Limiter nombre de profils ? (recommandé : NON)
+           - Timeout (recommandé : 300s)
            
-        3. **🚀 Calculer** (20-45 secondes)
-           - PASS 1 : Trouve le score optimal
-           - PASS 2 : Énumère TOUTES les variantes
+        3. **🚀 Calculer** (1-5 minutes)
+           - PASS 1 : Trouve le meilleur max_shortage possible
+           - PASS 2 : Trouve TOUS les profils uniques avec ce max_shortage
+           - Résultat : 10-50 profils uniques (pas 500 variantes redondantes)
            
-        4. **🎯 Choisir le niveau**
+        4. **👥 Voir les Profils Uniques**
+           - Chaque ligne = 1 profil différent
+           - Ex: "Julien -1j, Rémy -1j" vs "Hugo -4j"
+           - Option : Voir toutes les variantes d'un profil
+           
+        5. **🎯 Filtrer par Niveau**
            - Parfaites (0 lésé)
-           - Excellentes (≤1j lésé)
-           - Acceptables (≤2j lésés)
+           - Excellentes (max 1j lésé/personne)
+           - Acceptables (max 2j lésés/personne)
            - Compromis (>2j)
            
-        5. **📊 Comparer** et **💾 Exporter**
-           - Analyser avec graphiques
+        6. **📊 Comparer les 10 Meilleures**
+           - Graphique comparatif automatique
+           - 10 onglets avec détails complets
+           - Triées par score de qualité
+           
+        7. **💾 Choisir et Exporter**
+           - Analyser avec graphiques interactifs
            - Choisir la meilleure variante
-           - Exporter en CSV
+           - Exporter en CSV pour partage
         """)
     
     with st.expander("📊 Comprendre les Résultats"):
         st.markdown("""
+        ### 🎯 Profils Uniques vs Variantes
+        
+        **Profil Unique**
+        - = Ensemble des personnes lésées et leurs écarts
+        - Ex: "Julien -1j, Rémy -1j, Sophie -1j, Sylvain -1j"
+        - Un même profil peut avoir plusieurs variantes (permutations)
+        
+        **Variante**
+        - = Une façon spécifique de répartir les tournois
+        - Ex du même profil : E1-E2-E3-O1-O2 ou E1-E2-O1-E3-O2
+        - L'application garde automatiquement la meilleure variante
+        
+        **Dans l'Interface**
+        - Section "Profils Uniques" : Vue d'ensemble de tous les profils
+        - Checkbox "1 variante par profil" : Mode recommandé (élimine redondance)
+        - Sélecteur de profil : Pour explorer les variantes d'un profil
+        - Onglets Options 1-10 : Les 10 meilleures solutions (triées par score)
+        
+        ---
+        
         ### 🎯 Niveaux de Compromis
         
         **🎯 Parfaites**
@@ -191,51 +224,80 @@ with st.sidebar:
         **Lésés**
         - Format : `Nom (-Xj)`
         - Exemple : `Sophie (-2j)` = 2 jours de moins que souhaité
+        - Attention : `-1j` peut être étape OU open
         
         **Fatigue**
-        - Alerte si >4 jours consécutifs
-        - Pénalise le score
+        - Alerte si >3 jours consécutifs
+        - Pénalise le score (-5pts par jour au-dessus de 3)
         - À surveiller pour bien-être
         
         **Max Consécutifs**
-        - Nombre max de jours d'affilée
+        - Nombre max de jours d'affilée pour une personne
         - Idéal : ≤3 jours
         - Acceptable : 4 jours
         - Attention : ≥5 jours
+        
+        **Comparatif des 10 Meilleures**
+        - Graphique avec 4 métriques : Score, Vœux, Fatigue, Consécutifs
+        - Permet de comparer visuellement les options
+        - Triées par score décroissant (meilleur en premier)
         """)
     
     with st.expander("🎓 Algorithme (Expert)"):
         st.markdown("""
-        ### 🔬 Recherche Exhaustive 2-Passes
+        ### 🔬 Recherche Intelligente par Profils Uniques
         
         **PASS 1 : Optimisation** (5-15s)
         - Trouve le meilleur score possible
         - Utilise optimisation OR-Tools
-        - Résultat : Score optimal S*
+        - Résultat : Score optimal S* (ex: max 1j lésé/personne)
         
-        **PASS 2 : Énumération** (15-30s)
+        **PASS 2 : Énumération Intelligente** (variable)
         - Transforme en problème de satisfaction
-        - Contrainte : score = S*
-        - Énumère TOUTES les solutions
-        - Résultat : 20-200 variantes
+        - Contrainte : max_shortage = optimal
+        - **NOUVEAUTÉ** : Ne garde que 1 variante par profil unique
+        - Profil unique = ensemble des personnes lésées et leurs écarts
+        - Résultat : 10-50 profils uniques (au lieu de 500 variantes)
+        
+        **Exemple Concret**
+        
+        Sans profils uniques (ancien) :
+        - Solution 1 : Julien -1j, Rémy -1j, Sophie -1j, Sylvain -1j (E1-E2-E3-O1-O2)
+        - Solution 2 : Julien -1j, Rémy -1j, Sophie -1j, Sylvain -1j (E1-E2-O1-E3-O2)
+        - Solution 3 : Julien -1j, Rémy -1j, Sophie -1j, Sylvain -1j (E2-E1-E3-O1-O2)
+        - ... (500 variantes du MÊME profil)
+        
+        Avec profils uniques (nouveau) :
+        - Profil 1 : Julien -1j, Rémy -1j, Sophie -1j, Sylvain -1j → 1 meilleure variante
+        - Profil 2 : Hugo -4j → 1 meilleure variante
+        - Profil 3 : Émilie -2j, Delphine -2j → 1 meilleure variante
+        - ... (15 profils différents)
+        
+        **Exploration en Profondeur**
+        
+        Une fois un profil choisi, vous pouvez cliquer sur "🔍 Explorer toutes les variantes"
+        pour découvrir TOUTES les permutations de ce profil spécifique.
         
         **Garantie Mathématique**
-        - Complétude : Toutes les solutions optimales
-        - Pas de permutation manquante
-        - Emilie/Delphine interchangeables trouvées
+        - Complétude : Tous les profils optimaux trouvés
+        - Qualité : Meilleure variante de chaque profil
+        - Pas de redondance inutile
         
         ### 🎯 Critères d'Optimisation
         
-        1. **Respect vœux** (poids: 1000)
-           - Minimiser écarts souhaits/réalité
+        1. **Lésion max individuelle** (poids: 100000) - PRIORITÉ ABSOLUE
+           - Éviter qu'une personne perde beaucoup de jours
            
-        2. **Fatigue** (poids: 500)
+        2. **Total jours lésés** (poids: 1000)
+           - Minimiser la somme totale des jours perdus
+           
+        3. **Fatigue** (poids: 500)
            - Pénaliser >3j consécutifs
            
-        3. **Équipes** (poids: 10)
+        4. **Équipes** (poids: 10)
            - Compléter à 3 si possible
         
-        Score final = (écarts × 1000) + (fatigue × 500) + (incomplet × 10)
+        Score final = (max_shortage × 100000) + (total × 1000) + (fatigue × 500) + (incomplet × 10)
         """)
     
     with st.expander("📅 Planning des Tournois"):
@@ -280,70 +342,107 @@ with st.sidebar:
         **Sans O3** : 8 jours (6j étapes + 2j opens)
         """)
     
-    with st.expander("⚙️ Paramètres Avancés"):
+    with st.expander("⚙️ Paramètres de Recherche"):
         st.markdown("""
-        ### 🎛️ Configuration
+        ### 🎛️ Configuration Recherche
+        
+        **🎯 1 seule variante par profil**
+        - ✅ **Coché (recommandé)** : Mode profils uniques
+          - Garde la meilleure variante de chaque profil
+          - Résultats clairs, pas de redondance
+          - Affichage rapide
+        - ❌ Décoché : Mode exploration
+          - Affiche toutes les variantes
+          - Utile pour choisir selon contraintes externes
+          - Peut générer beaucoup de lignes
+        
+        **📊 Score minimum requis**
+        - 0 : Tous les profils affichés (défaut)
+        - 70 : Seulement profils de bonne qualité
+        - 85 : Seulement profils excellents
+        - **Utilité** : Réduire le nombre de profils si trop nombreux
+        
+        **Limiter le nombre de solutions**
+        - ✅ Coché : Limite manuelle (ex: 100)
+        - ❌ **Décoché (recommandé)** : Mode exhaustif
+        - Mode exhaustif explore TOUS les profils possibles
+        - S'arrête automatiquement si tous trouvés ou timeout atteint
+        
+        **Timeout (secondes)**
+        - 120s : Rapide, cas simples (<10 participants)
+        - 300s : **Recommandé** pour recherche exhaustive
+        - 600s : Maximum pour cas très complexes (>20 participants)
+        - Le calcul s'arrête dès que tous les profils sont trouvés
         
         **Inclure O3**
         - Si décoché : Ignore le dimanche final
         - Si coché : Inclut O3 dans le planning
-        - Recommandé : Selon disponibilités réelles
         
         **Autoriser équipes incomplètes**
-        - Si décoché : Équipes de 3 strictement
-        - Si coché : Permet 1-2 joueurs
+        - Si décoché : Équipes de 3 strictement (peut être infaisable)
+        - Si coché : Permet 1-2 joueurs (pénalisé mais accepté)
         - Recommandé : Oui si peu de participants
         
-        **Solutions à chercher**
-        - 50-100 : Rapide, suffisant
-        - 100-200 : Plus de choix
-        - 200-500 : Maximum (lent)
-        - Limite l'énumération en PASS 2
-        
-        **Respect_Voeux**
-        - Case à cocher par participant
+        **Respect_Voeux** (case à cocher par participant)
         - Force égalité stricte souhaits = réalité
         - ⚠️ Utiliser avec parcimonie !
         - Trop de cases cochées = aucune solution
+        
+        ### 🔍 Workflow Recommandé
+        
+        **Recherche Initiale** :
+        1. ✅ 1 seule variante par profil (coché)
+        2. 📊 Score minimum : 0 (tous les profils)
+        3. ❌ Limiter : décoché (exhaustif)
+        4. ⏱️ Timeout : 300s
+        5. 🚀 Calculer
+        6. 📊 Comparer les profils
+        
+        **Si trop de profils** :
+        - Augmenter score minimum à 70 ou 80
+        - Ou activer limite à 50-100
+        
+        **Pour explorer un profil** :
+        1. ❌ Décocher "1 seule variante"
+        2. Sélectionner le profil dans le menu
+        3. Voir toutes ses variantes
         """)
     
     with st.expander("💡 Conseils & Astuces"):
         st.markdown("""
         ### ✅ Bonnes Pratiques
         
-        1. **Commencer simple**
-           - Lancer avec données par défaut
-           - Observer les résultats
-           - Ajuster progressivement
+        1. **Workflow Recommandé**
+           - Lancer en mode exhaustif (pas de limite)
+           - Timeout 300s pour être sûr
+           - Observer tous les profils possibles
+           - Choisir le profil le plus équitable
+           - Explorer ses variantes si besoin
         
-        2. **Gérer les contraintes**
-           - Max 2-3 Respect_Voeux cochés
-           - Vœux raisonnables (≤6j total)
-           - Équilibrer H/F pour étapes
+        2. **Interpréter les Résultats**
+           - Chaque ligne = 1 profil unique
+           - Privilégier profils "Excellents" (max 1j lésé/pers)
+           - Comparer nombre de personnes lésées
+           - Discuter avec les concernés
         
-        3. **Interpréter les résultats**
-           - Privilégier niveau "Parfaites"
-           - Sinon "Excellentes" très OK
-           - Discuter avec les lésés si "Acceptables"
-        
-        4. **Utiliser les filtres**
-           - "Seulement opens lésés" = étapes OK
-           - "Max consécutifs" = limiter fatigue
-           - "Max total lésé" = global acceptable
+        3. **Utiliser l'Exploration**
+           - Utile si vous voulez voir toutes les permutations
+           - Permet de choisir selon contraintes externes
+           - Ex: disponibilités covoiturage, préférences lieux
         
         ### ⚠️ Pièges à Éviter
         
-        - ❌ Trop de Respect_Voeux
-        - ❌ Vœux impossibles (ex: 3 étapes)
-        - ❌ Couples avec vœux opposés
-        - ❌ Trop peu de participants
+        - ❌ Limiter à 50 solutions : vous ratez des profils !
+        - ❌ Trop de Respect_Voeux : impossible à satisfaire
+        - ❌ Timeout trop court : pas le temps d'explorer
+        - ❌ Vœux impossibles (ex: 3 étapes alors que 3 existent)
         
-        ### 🔧 Si Aucune Solution
+        ### 🔧 Si Calcul Trop Long
         
-        1. Décocher tous les Respect_Voeux
-        2. Activer "Équipes incomplètes"
-        3. Réduire les vœux de certains
-        4. Vérifier couples (disponibilités alignées)
+        1. Réduire timeout à 120s pour avoir un premier résultat
+        2. Activer limite à 100 profils
+        3. Relancer avec timeout 300s si besoin de plus
+        4. Ou simplifier les contraintes (moins de Respect_Voeux)
         """)
     
     st.markdown("---")
@@ -380,8 +479,60 @@ with st.sidebar:
                     st.code(result.stdout + "\n" + result.stderr)
 
 # ======================================================
+# SECTION 0: PLANNING DES TOURNOIS
+# ======================================================
+st.header("📅 Planning des Tournois - Estivales 2026")
+
+col_plan1, col_plan2, col_plan3 = st.columns(3)
+
+with col_plan1:
+    st.markdown("""
+    ### 📍 SABLES D'OR
+    **Étape 1 (E1)**  
+    🗓️ Samedi-Dimanche  
+    👥 Hommes & Femmes séparés  
+    🏐 Équipes de 3
+    """)
+
+with col_plan2:
+    st.markdown("""
+    ### 📍 ERQUY
+    **Open 1 (O1)**  
+    🗓️ Lundi  
+    👥 Mixte  
+    🏐 Équipes de 3
+    
+    **Étape 2 (E2)**  
+    🗓️ Mardi-Mercredi  
+    👥 Hommes & Femmes séparés  
+    🏐 Équipes de 3
+    """)
+
+with col_plan3:
+    st.markdown("""
+    ### 📍 SAINT-CAST
+    **Open 2 (O2)**  
+    🗓️ Jeudi  
+    👥 Mixte  
+    🏐 Équipes de 3
+    
+    **Étape 3 (E3)**  
+    🗓️ Vendredi-Samedi  
+    👥 Hommes & Femmes séparés  
+    🏐 Équipes de 3
+    
+    **Open 3 (O3)** ⚠️ Optionnel  
+    🗓️ Dimanche  
+    👥 Mixte  
+    🏐 Équipes de 3
+    """)
+
+st.info("📌 **Total** : 6 jours d'étapes (obligatoires) + 3 jours d'opens (flexibles)")
+
+# ======================================================
 # SECTION 1: CONFIGURATION DES PARTICIPANTS
 # ======================================================
+st.markdown("---")
 st.header("1. Configuration des Participants")
 
 col_editor, col_actions = st.columns([3, 1])
@@ -427,11 +578,15 @@ with col_editor:
                 step=1
             )
         },
-        height=min(600, 35 * (len(df_participants) + 2))
+        height=min(600, 35 * (len(df_participants) + 2)),
+        key="participants_editor"
     )
     
-    # Sauvegarder les modifications
-    st.session_state.data = edited_df.values.tolist()
+    # Sauvegarder les modifications ET forcer rerun si changement
+    new_data = edited_df.values.tolist()
+    if new_data != st.session_state.data:
+        st.session_state.data = new_data
+        st.rerun()  # Force le rerun pour que le changement soit pris en compte
 
 with col_actions:
     st.markdown("#### Actions Rapides")
@@ -486,7 +641,7 @@ with col_actions:
 st.markdown("---")
 st.header("2. Paramètres du Planning")
 
-col_param1, col_param2, col_param3 = st.columns(3)
+col_param1, col_param2 = st.columns(2)
 
 with col_param1:
     st.session_state.include_o3 = st.checkbox(
@@ -502,25 +657,88 @@ with col_param2:
         help="Permet des équipes de 1 ou 2 joueurs (pénalisé mais accepté)"
     )
 
-with col_param3:
-    max_solutions = st.slider(
-        "🔢 Solutions à chercher",
-        min_value=10,
-        max_value=500,
-        value=500,  # Par défaut à 500
-        step=10,
-        help="""Nombre maximum de solutions différentes à générer.
+# Configuration de recherche
+st.markdown("#### 🔧 Configuration de Recherche")
+
+col_config1, col_config2, col_config3 = st.columns(3)
+
+with col_config1:
+    # Mode profils uniques ou toutes variantes
+    unique_profiles_mode = st.checkbox(
+        "🎯 Mode profils uniques",
+        value=True,
+        help="""Mode recommandé : 1 meilleure variante par profil unique.
         
-        - Plus de solutions = plus de choix mais calcul plus long
-        - L'algorithme s'arrête dès qu'il en trouve assez
-        - Recommandé: 50-100 (rapide et suffisant)
-        - Maximum: 500 (calcul long, pour cas complexes)
-        - Seules les 10 meilleures seront affichées"""
+        ✅ Coché (recommandé) : Résultats clairs, pas de redondance
+        ❌ Décoché : Toutes les variantes (peut être très nombreux)
+        """
+    )
+    st.session_state.unique_profiles_mode = unique_profiles_mode
+    
+    if unique_profiles_mode:
+        st.caption("✅ 1 meilleure variante par profil")
+    else:
+        st.caption("⚠️ Toutes les variantes affichées")
+
+with col_config2:
+    # Score minimum pour filtrer
+    min_quality_score = st.slider(
+        "📊 Score minimum",
+        min_value=0,
+        max_value=100,
+        value=0,
+        step=5,
+        help="""Filtre les profils APRÈS le calcul selon leur score qualité.
+        
+        - 0 : Tous les profils (défaut)
+        - 50-69 : Qualité acceptable
+        - 70+ : Bonne à excellente qualité
+        
+        IMPORTANT: Le filtrage se fait après le solve pour ne pas manquer
+        des solutions que OR-Tools considère optimales mais qui ont un bon score."""
+    )
+    st.session_state.min_quality_score = min_quality_score
+
+with col_config3:
+    # Limite du nombre de profils
+    enable_limit = st.checkbox(
+        "🔢 Limiter le nombre",
+        value=False,
+        help="Limiter le nombre de profils explorés (décocher = exhaustif)"
     )
     
-    # Sauvegarder pour utilisation dans recalcul
-    st.session_state.max_solutions = max_solutions
+    if enable_limit:
+        max_solutions = st.number_input(
+            "Nombre max de profils",
+            min_value=10,
+            max_value=1000,
+            value=100,
+            step=10,
+            help="Limite le nombre de profils uniques"
+        )
+    else:
+        max_solutions = None
+        st.caption("🔄 Mode exhaustif")
+    
+    st.session_state.max_solutions = max_solutions if max_solutions else 99999
 
+# Timeout
+st.markdown("#### ⏱️ Temps de Calcul")
+timeout = st.slider(
+    "Timeout (secondes)",
+    min_value=30,
+    max_value=600,
+    value=300,
+    step=30,
+    help="""Temps maximum de calcul.
+    
+    - 120s: Rapide, cas simples
+    - 300s: Recommandé (exhaustif)
+    - 600s: Maximum pour cas complexes"""
+)
+
+# ======================================================
+# SECTION 3: VALIDATION ET SUGGESTIONS
 # ======================================================
 # SECTION 3: VALIDATION ET SUGGESTIONS
 # ======================================================
@@ -607,8 +825,10 @@ if st.button("🚀 Calculer les Variantes", type="primary", width="stretch"):
     config = SolverConfig(
         include_o3=st.session_state.include_o3,
         allow_incomplete=st.session_state.allow_incomplete,
-        max_solutions=max_solutions,
-        timeout_seconds=60.0  # Réduit pour Streamlit Cloud (timeout 90s)
+        max_solutions=st.session_state.max_solutions,
+        timeout_seconds=float(timeout),
+        search_mode='unique_profiles' if st.session_state.get('unique_profiles_mode', True) else 'all',
+        min_quality_score=st.session_state.get('min_quality_score', 50)
     )
     
     # Zone de progression
@@ -621,20 +841,21 @@ if st.button("🚀 Calculer les Variantes", type="primary", width="stretch"):
     # Callback de progression
     def progress_callback(phase, message):
         if phase == "pass1":
-            status_text.info(f"🔍 **Pass 1**: {message}")
+            status_text.info(f"🏐 **Pass 1 - Optimisation**: {message}")
         elif phase == "pass2":
-            status_text.warning(f"🔍 **Pass 2**: {message}")
+            status_text.warning(f"🏐 **Pass 2 - Énumération**: {message}")
         elif phase == "pass3":
-            status_text.info(f"🔄 **Pass 3**: {message}")
+            status_text.info(f"🏐 **Pass 3 - Relaxation**: {message}")
     
-    # Lancer la résolution multi-passes
-    status_text.text("🔨 Construction du modèle...")
-    
-    result = multipass.solve_multipass(
-        participants,
-        active_tournaments,
-        progress_callback=progress_callback
-    )
+    # Lancer la résolution multi-passes avec spinner
+    with st.spinner("🏐 Calcul en cours..."):
+        status_text.text("🔨 Construction du modèle...")
+        
+        result = multipass.solve_multipass(
+            participants,
+            active_tournaments,
+            progress_callback=progress_callback
+        )
     
     status_text.empty()
     
@@ -642,8 +863,23 @@ if st.button("🚀 Calculer les Variantes", type="primary", width="stretch"):
     if result.status == 'success':
         st.success(result.message)
         
-        # Sauvegarder les solutions
-        st.session_state.solutions = result.solutions
+        # Filtrer par score minimum SI configuré
+        solutions_avant_filtre = result.solutions
+        min_score = st.session_state.get('min_quality_score', 0)
+        
+        if min_score > 0:
+            solutions_filtrees = [
+                s for s in solutions_avant_filtre 
+                if s.get_quality_score() >= min_score
+            ]
+            
+            if len(solutions_filtrees) < len(solutions_avant_filtre):
+                st.info(f"🔍 Filtrage par score ≥{min_score}: {len(solutions_avant_filtre)} → {len(solutions_filtrees)} profils conservés")
+            
+            st.session_state.solutions = solutions_filtrees
+        else:
+            st.session_state.solutions = solutions_avant_filtre
+        
         st.session_state.solver_info = {'pass': result.pass_number}
         
         # TOUJOURS sauvegarder les candidats pour permettre le choix manuel
@@ -1090,25 +1326,22 @@ if st.session_state.solutions or ('candidates' in st.session_state and st.sessio
     # Afficher les profils uniques
     st.info(f"🔍 {len(profils_dict)} profil(s) unique(s) de lésions parmi {len(filtered)} solutions")
     
-    # BONUS: Checkbox pour limiter à 1 solution par profil
-    col_profil1, col_profil2 = st.columns([2, 3])
+    # Appliquer le filtre de score minimum si configuré
+    min_score = st.session_state.get('min_quality_score', 0)
+    if min_score > 0:
+        # Filtrer les profils par score minimum
+        profils_filtered = {}
+        for signature, solutions in profils_dict.items():
+            # Prendre la meilleure solution du profil
+            best_sol = max(solutions, key=lambda s: s.get_quality_score())
+            if best_sol.get_quality_score() >= min_score:
+                profils_filtered[signature] = solutions
+        
+        profils_dict = profils_filtered
+        st.info(f"📊 {len(profils_dict)} profil(s) avec score ≥ {min_score}/100")
     
-    with col_profil1:
-        limit_to_best_per_profile = st.checkbox(
-            "🎯 1 seule variante par profil (la meilleure)",
-            value=False,
-            help="Garde uniquement la solution avec le meilleur score pour chaque profil unique"
-        )
-    
-    with col_profil2:
-        if limit_to_best_per_profile:
-            st.caption("✅ Mode actif : 1 solution max par profil")
-        else:
-            st.caption("ℹ️ Mode désactivé : toutes les variantes affichées")
-    
-    # Appliquer la limitation si activée
-    if limit_to_best_per_profile:
-        # Ne garder que la meilleure solution de chaque profil
+    # Si mode "1 variante par profil" activé, ne garder que la meilleure de chaque
+    if st.session_state.get('limit_to_best_per_profile', True):
         best_per_profile = []
         for signature, solutions in profils_dict.items():
             # Trier par score et prendre la meilleure
@@ -1118,7 +1351,9 @@ if st.session_state.solutions or ('candidates' in st.session_state and st.sessio
         # Remplacer filtered par les meilleures
         filtered = sorted(best_per_profile, key=lambda s: -s.get_quality_score())
         
-        st.success(f"✅ {len(filtered)} solution(s) affichée(s) (1 par profil)")
+        st.success(f"✅ Mode actif : 1 meilleure variante par profil ({len(filtered)} solutions)")
+    else:
+        st.info(f"ℹ️ Mode exploration : toutes les variantes affichées ({len(filtered)} solutions)")
     
     # Sélecteur de profil pour filtrer
     profil_labels = []
@@ -1129,26 +1364,27 @@ if st.session_state.solutions or ('candidates' in st.session_state and st.sessio
         profil_labels.append(f"Profil #{idx} : {profil_str} ({nb_variantes} variantes)")
         profil_signatures.append(signature)
     
-    selected_profil_index = st.selectbox(
-        "🎯 Filtrer par profil (optionnel):",
-        options=["Tous les profils"] + profil_labels,
-        help="Sélectionnez un profil pour afficher uniquement ses variantes",
-        disabled=limit_to_best_per_profile  # Désactivé si 1 par profil activé
-    )
-    
-    # Appliquer le filtre de profil si sélectionné (et pas en mode 1 par profil)
-    if selected_profil_index != "Tous les profils" and not limit_to_best_per_profile:
-        # Extraire l'index du profil
-        profil_idx = profil_labels.index(selected_profil_index)
-        selected_signature = profil_signatures[profil_idx]
+    # Sélecteur de profil seulement si mode exploration
+    if not st.session_state.get('limit_to_best_per_profile', True):
+        selected_profil_index = st.selectbox(
+            "🎯 Filtrer par profil (optionnel):",
+            options=["Tous les profils"] + profil_labels,
+            help="Sélectionnez un profil pour afficher uniquement ses variantes"
+        )
         
-        # Filtrer pour ne garder que les solutions de ce profil
-        filtered = profils_dict[selected_signature]
-        
-        st.success(f"✅ Affichage de {len(filtered)} variantes du profil sélectionné")
-        
-        # Re-trier par score
-        filtered = sorted(filtered, key=lambda s: -s.get_quality_score())
+        # Appliquer le filtre de profil si sélectionné
+        if selected_profil_index != "Tous les profils":
+            # Extraire l'index du profil
+            profil_idx = profil_labels.index(selected_profil_index)
+            selected_signature = profil_signatures[profil_idx]
+            
+            # Filtrer pour ne garder que les solutions de ce profil
+            filtered = profils_dict[selected_signature]
+            
+            st.success(f"✅ Affichage de {len(filtered)} variantes du profil sélectionné")
+            
+            # Re-trier par score
+            filtered = sorted(filtered, key=lambda s: -s.get_quality_score())
     
     # Créer un expander pour voir tous les profils
     with st.expander(f"📋 Voir les {len(profils_dict)} profil(s) unique(s)", expanded=True):
@@ -1182,15 +1418,8 @@ if st.session_state.solutions or ('candidates' in st.session_state and st.sessio
     st.subheader(f"📊 Comparatif des {len(best_10)} Meilleures Variantes")
     
     if len(best_10) > 1:
-        col_comp1, col_comp2 = st.columns(2)
-        
-        with col_comp1:
-            fig_comparison = create_quality_comparison_chart(best_10)
-            st.plotly_chart(fig_comparison, width="stretch", key="comp_chart")
-        
-        with col_comp2:
-            fig_overview = create_statistics_overview(best_10)
-            st.plotly_chart(fig_overview, width="stretch", key="overview_chart")
+        fig_comparison = create_quality_comparison_chart(best_10)
+        st.plotly_chart(fig_comparison, use_container_width=True, key="comp_chart")
     else:
         st.info("Une seule variante disponible - voir détails ci-dessous")
     

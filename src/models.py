@@ -209,73 +209,54 @@ class Solution:
         """
         Calcule un score de qualité de la solution (0-100)
         
-        FORMULE OPTIMISÉE (v2.2.3):
-        Objectif: Tous jouent le plus possible, lésions réparties, favoriser gros demandeurs
+        ALIGNÉ SUR L'OBJECTIF OR-TOOLS (v2.3.0):
+        Le score reflète exactement ce que le solver optimise pour garantir
+        une cohérence totale entre l'objectif OR-Tools et le score affiché.
         
-        Score = 100 - pénalité_jours_lésés - pénalité_concentration - pénalité_distribution - pénalité_fatigue
+        Critères (par ordre de priorité):
+        1. max_shortage (lésion max individuelle): -10 pts/jour
+        2. total_shortage (total jours lésés): -2.5 pts/jour
+        3. fatigue (>3j consécutifs): -2 pts/personne
+        4. max_consecutifs: -1 pt/jour au-dessus de 3
         
-        1. Pénalité jours lésés (critère principal): -2.5 points par jour lésé total
-        2. Pénalité concentration: -5 points par jour au-delà de 1j pour une même personne
-        3. Pénalité distribution (critère tertiaire): ratio selon demandes
-        4. Pénalité fatigue: -2 points par personne fatiguée
+        100 = solution parfaite (tous vœux respectés)
+        0 = solution très mauvaise
         """
         if not self.participants:
             return 0.0
         
-        # 1. CRITÈRE PRINCIPAL: Total jours lésés
-        # Pénalité de -2.5 points par jour manquant (ajusté de 3 → 2.5)
-        total_jours_leses = 0
-        for participant in self.participants:
-            stats = self.get_participant_stats(participant.nom)
-            ecart = stats['ecart']
-            if ecart < 0:  # Seulement écarts négatifs (lésés)
-                total_jours_leses += abs(ecart)
+        # 1. CRITÈRE DOMINANT: Lésion maximale individuelle
+        max_shortage = max(
+            (abs(self.get_participant_stats(p.nom)['ecart']) 
+             for p in self.participants 
+             if self.get_participant_stats(p.nom)['ecart'] < 0),
+            default=0
+        )
         
-        penalite_jours = total_jours_leses * 2.5
+        # 2. CRITÈRE SECONDAIRE: Total jours lésés
+        total_shortage = sum(
+            abs(self.get_participant_stats(p.nom)['ecart'])
+            for p in self.participants
+            if self.get_participant_stats(p.nom)['ecart'] < 0
+        )
         
-        # 2. NOUVEAU: Pénalité pour CONCENTRATION des lésions
-        # On pénalise fortement les grosses lésions individuelles (>1j)
-        # Favorise 4 personnes de 1j plutôt que 1 personne de 4j
-        penalite_concentration = 0.0
-        max_lesion_individuelle = 0
+        # 3. CRITÈRE TERTIAIRE: Fatigue (nombre de personnes avec >3j consécutifs)
+        nb_fatigues = len(self.fatigue_participants)
         
-        for participant in self.participants:
-            stats = self.get_participant_stats(participant.nom)
-            ecart = stats['ecart']
-            
-            if ecart < 0:  # Participant lésé
-                jours_manquants = abs(ecart)
-                max_lesion_individuelle = max(max_lesion_individuelle, jours_manquants)
-                
-                # Pénalité progressive: 0 pour 1j, +5 pour chaque jour supplémentaire
-                if jours_manquants > 1:
-                    penalite_concentration += (jours_manquants - 1) * 5
+        # 4. CRITÈRE QUATERNAIRE: Jours consécutifs max
+        max_consecutifs = self.max_consecutive_days
         
-        # 3. CRITÈRE TERTIAIRE: Distribution (qui est lésé)
-        # À égalité de jours et de répartition, favoriser léser les gros demandeurs
-        cout_distribution = 0.0
+        # Calcul des pénalités (mêmes pondérations relatives que OR-Tools)
+        penalite_max = max_shortage * 10           # 10 points par jour max (priorité absolue)
+        penalite_total = total_shortage * 2.5      # 2.5 points par jour total
+        penalite_fatigue = nb_fatigues * 2         # 2 points par personne fatiguée
+        penalite_consecutifs = max(0, max_consecutifs - 3) * 1  # 1 point par jour au-dessus de 3
         
-        for participant in self.participants:
-            stats = self.get_participant_stats(participant.nom)
-            ecart = stats['ecart']
-            
-            if ecart < 0:  # Participant lésé
-                jours_demandes = stats['jours_souhaites']
-                jours_manquants = abs(ecart)
-                
-                if jours_demandes > 0:
-                    ratio_lesion = jours_manquants / jours_demandes
-                    cout_distribution += ratio_lesion * 8  # Poids réduit (15 → 8)
-        
-        # 4. Pénalités secondaires (inchangées)
-        penalite_fatigue = len(self.fatigue_participants) * 2
-        penalite_consecutifs = max(0, self.max_consecutive_days - MAX_CONSECUTIVE_DAYS) * 1
-        
-        # SCORE FINAL
-        score = 100 - penalite_jours - penalite_concentration - cout_distribution - penalite_fatigue - penalite_consecutifs
+        # Score final
+        score = 100 - penalite_max - penalite_total - penalite_fatigue - penalite_consecutifs
         
         # Bonus pour solution parfaite
-        if total_jours_leses == 0:
+        if total_shortage == 0:
             score = 100.0
         
         return max(0.0, min(100.0, score))
@@ -288,6 +269,8 @@ class SolverConfig:
     allow_incomplete: bool = False
     max_solutions: int = 50
     timeout_seconds: float = 120.0
+    search_mode: str = 'unique_profiles'  # 'unique_profiles' ou 'all'
+    min_quality_score: int = 0  # Score minimum pour filtrer les profils
     
     # Poids pour l'objectif multi-critères
     weight_wishes: int = 1000

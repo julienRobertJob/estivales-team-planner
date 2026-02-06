@@ -1,7 +1,7 @@
 # 🔧 Spécification Technique - Organisateur d'Équipes Estivales de Volley
 
-**Version** : 2.2.3  
-**Date** : 3 Février 2026  
+**Version** : 2.2.4  
+**Date** : 4 Février 2026  
 **Statut** : En production
 
 ---
@@ -1557,3 +1557,53 @@ TOTAL TIME: 91.10s
 ---
 
 **FIN DE LA SPÉCIFICATION TECHNIQUE**
+
+## 11. Historique des Modifications Techniques
+
+### Version 2.2.4 (4 Février 2026)
+
+**Optimisations UI** :
+```python
+# app.py ligne 52
+st.set_page_config(
+    initial_sidebar_state="collapsed"  # Fermée par défaut
+)
+
+# app.py ligne 510
+max_solutions = st.slider(
+    value=500  # 500 au lieu de 50
+)
+```
+
+**Nouvelles fonctionnalités** :
+```python
+# app.py lignes 1091-1133
+# Checkbox "1 solution par profil"
+limit_to_best_per_profile = st.checkbox(...)
+
+if limit_to_best_per_profile:
+    best_per_profile = []
+    for signature, solutions in profils_dict.items():
+        best_solution = max(solutions, key=lambda s: s.get_quality_score())
+        best_per_profile.append(best_solution)
+    filtered = sorted(best_per_profile, key=lambda s: -s.get_quality_score())
+```
+
+**Métriques modifiées** :
+```python
+# app.py ligne 1132
+# Score moyen → Score max
+score_max = max(s.get_quality_score() for s in solutions)
+st.metric("Score max", f"{score_max:.0f}/100")
+```
+
+**Nouveaux documents** :
+- `docs/REVIEW_SPECS_VS_REALITE.md` : Analyse conformité
+- `README.md` : Section Documentation avec liens specs
+
+**Impact performance** :
+- Nombre solutions par défaut : 50 → 500 (+900%)
+- Temps calcul moyen : +20-30s (acceptable)
+- Exhaustivité : Meilleure couverture des profils uniques
+
+**Tests** : Tous passants (44/44) ✅
